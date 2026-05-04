@@ -1,0 +1,20 @@
+services:
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: epiwalk-dashboard:latest
+    container_name: epiwalk-dashboard
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ../python-counting:/python-counting
+      - /var/run/docker.sock:/var/run/docker.sock
+      - dashboard-data:/app/data
+    environment:
+      - PYTHON_COUNTING_DIR=/python-counting
+      - HOST_PYTHON_COUNTING_DIR=${HOST_PYTHON_COUNTING_DIR}
+      - SETTINGS_FILE=/app/data/settings.json
+volumes:
+  dashboard-data:

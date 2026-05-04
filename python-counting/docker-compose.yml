@@ -1,0 +1,38 @@
+services:
+  services-python-1:
+    image: python-counting-services-python-1:latest
+    container_name: services-python-b1
+    restart: unless-stopped
+    env_file:
+      - .env_b1
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    networks:
+      - envisions
+    shm_size: 1gb
+    runtime: nvidia
+    volumes:
+      - /home/irengi/Documents/Python/epiwalk/v3-dashboard/python-counting:/app
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+  services-python-t1:
+    image: python-counting-services-python-1:latest
+    container_name: services-python-t1
+    restart: unless-stopped
+    env_file:
+      - .env_T1
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    networks:
+      - envisions
+    shm_size: 1gb
+    runtime: nvidia
+    volumes:
+      - /home/irengi/Documents/Python/epiwalk/v3-dashboard/python-counting:/app
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+networks:
+  envisions:
+    driver: bridge

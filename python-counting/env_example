@@ -1,0 +1,79 @@
+# DEVICE INFO 
+DEVICE_ID = 'bd297e8d-9b86-4ba9-a6d2-147a623767e6' # UUID
+DEVICE_NAME = 'CCTV B2 SELATAN'
+DEVICE_CODE = 'CCTV_EPW_B2S' # CODE
+
+
+# DB CONNECTION GLOBAL
+PG_HOST='host.docker.internal'
+PG_PORT='5435'
+PG_DB='postgres'
+PG_USER='postgres'
+PG_PASS='pahlawan10'
+
+# MQTT GLOBAL
+MQTT_BROKER = '10.11.0.34'
+MQTT_PORT = '1883'
+MQTT_USERNAME = ''
+MQTT_PASSWORD =  ''
+
+# MQTT SEND TOPIC (UNIQUE PER CAMERA)
+MQTT_TOPIC = '/person_in'
+MQTT_INTERVAL_TOPIC = '/resampling_person/EPW/CCTV_EPW_B2S'
+
+
+# DEBUG MODE, ACTIVATE THE DISPLAY AND DISABLE THE SEND DATA ( WONT WORK ON PRODUCTION)
+DEBUG_MODE = 'false'
+
+
+# VIDEO STREAM URL
+RTSP_URL='rtsp://admin:Password@192.168.100.34/Streaming/Channels/501' # RTSP URL, mp4 video path, or 0 for videocam
+# OPENCV_FFMPEG_CAPTURE_OPTIONS=rtsp_transport;tcp|stimeout;5000000|max_delay;5000000|rw_timeout;5000000|fflags;nobuffer|flags;low_delay|reorder_queue_size;0
+# 800 x 600
+# 1024 x 768
+# 1280 x 720
+# 1920 x 1080
+SCREEN_RESOLUTION= [800, 600]
+DETECTION_MARGIN= 30
+YOLO_MODEL= "yolo26m.pt"
+YOLO_CONFIDENCE = '0.3'
+ENABLE_NVDEC = 'true'
+JPEG_QUALITY = 40
+
+FPS_LIMIT = 25
+# Frame skip - process 1 out of every N frames (2 = every other frame)
+FRAME_SKIP = 1
+
+#OFFSET_AMOUNT OF LINE
+OFFSET_AMOUNT= 5
+
+
+
+
+# LINE POINT SETUP
+# "X" for point on the left and right line or "Y" for point on the up and bottom line
+POINT_AXIS= 'Y'
+
+MERGE_GATES = 'true
+
+# SWAP IN/OUT DIRECTION
+# 'false' = Cross OUT line first, then IN line to count IN (default)
+# 'true' = Cross IN line first, then OUT line to count IN
+SWAP_IN_OUT = 'true'
+
+DETECTION_STYLE = 'dot'
+
+DOT_OFFSET = 'Y'
+DOT_OFFSET_AMOUNT = -20
+
+
+LINE_OFFSET = 'Y'
+LINE_OFFSET_AMOUNT = 5
+
+# INCREMENTAL LINE
+# LINE IS DOUBLED, SO IT WILL JUMP FROM A TO C TO E SO On
+# FUNCTION IS THERE IS ALREADY A SYSTEM ON THE MAIN SCRIPT TO DUPLICATE THE LINE TO MAKE IT DOUBLE 
+lineA= [(351, 51), (381, 207)]
+lineC= [(381, 207), (613, 240)]
+lineE= [(613, 240), (792, 163)]
+
