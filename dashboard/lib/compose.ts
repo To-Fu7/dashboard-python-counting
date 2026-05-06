@@ -115,15 +115,22 @@ function buildServiceDefinition(deviceCode: string, hardwareMode: HardwareMode):
     };
   }
 
-  // server mode: standard NVIDIA runtime
+  if (hardwareMode === 'server') {
+    return {
+      ...base,
+      runtime: 'nvidia',
+      volumes: [`${HOST_PYTHON_COUNTING_DIR}:/app`],
+      environment: [
+        'NVIDIA_VISIBLE_DEVICES=all',
+        'NVIDIA_DRIVER_CAPABILITIES=all',
+      ],
+    };
+  }
+
+  // cpu mode: no GPU runtime or device mappings
   return {
     ...base,
-    runtime: 'nvidia',
     volumes: [`${HOST_PYTHON_COUNTING_DIR}:/app`],
-    environment: [
-      'NVIDIA_VISIBLE_DEVICES=all',
-      'NVIDIA_DRIVER_CAPABILITIES=all',
-    ],
   };
 }
 

@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/StatusBadge';
-import { Play, Square, RotateCcw, Camera, AlertCircle, RefreshCw, Layers, HammerIcon } from 'lucide-react';
+import { Play, Square, RotateCcw, Camera, AlertCircle, RefreshCw, Layers, HammerIcon, Cpu, MemoryStick, MonitorDot } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import type { ContainerStatus } from '@/lib/types';
@@ -122,6 +122,8 @@ export default function HomePage() {
         </div>
       </div>
 
+      <SystemStats />
+
       {imageReady === false && (
         <div className="rounded-lg border border-yellow-500/40 bg-yellow-500/10 p-4 flex items-start gap-3">
           <AlertCircle className="w-5 h-5 text-yellow-500 shrink-0 mt-0.5" />
@@ -165,6 +167,103 @@ export default function HomePage() {
             onAction={containerAction}
           />
         ))}
+      </div>
+    </div>
+  );
+}
+
+interface GpuInfo { name: string; utilization: number; memUsed: number; memTotal: number }
+interface SystemData {
+  cpu: { pct: number };
+  ram: { used: number; total: number; usedGb: string; totalGb: string; pct: number };
+  gpus: GpuInfo[] | null;
+}
+
+function Bar({ pct, color }: { pct: number; color: string }) {
+  return (
+    <div className="w-full h-1.5 rounded-full bg-muted overflow-hidden">
+      <div
+        className={`h-full rounded-full transition-all duration-500 ${color}`}
+        style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
+      />
+    </div>
+  );
+}
+
+function SystemStats() {
+  const [data, setData] = useState<SystemData | null>(null);
+
+  useEffect(() => {
+    function poll() {
+      fetch('/api/system')
+        .then(r => r.json())
+        .then(setData)
+        .catch(() => {});
+    }
+    poll();
+    const id = setInterval(poll, 3000);
+    return () => clearInterval(id);
+  }, []);
+
+  const dash = '—';
+
+  return (
+    <div className="grid grid-cols-3 gap-3">
+      {/* CPU */}
+      <div className="rounded-lg border border-border bg-card p-3 space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+            <Cpu className="w-3.5 h-3.5" />
+            CPU
+          </div>
+          <span className="text-sm font-semibold tabular-nums">
+            {data ? `${data.cpu.pct}%` : dash}
+          </span>
+        </div>
+        <Bar pct={data?.cpu.pct ?? 0} color="bg-blue-500" />
+      </div>
+
+      {/* RAM */}
+      <div className="rounded-lg border border-border bg-card p-3 space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+            <MemoryStick className="w-3.5 h-3.5" />
+            RAM
+          </div>
+          <span className="text-sm font-semibold tabular-nums">
+            {data ? `${data.ram.usedGb} / ${data.ram.totalGb} GB` : dash}
+          </span>
+        </div>
+        <Bar pct={data?.ram.pct ?? 0} color="bg-emerald-500" />
+      </div>
+
+      {/* GPU */}
+      <div className="rounded-lg border border-border bg-card p-3 space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+            <MonitorDot className="w-3.5 h-3.5" />
+            {data?.gpus?.[0]?.name
+              ? <span className="truncate max-w-[120px]" title={data.gpus[0].name}>{data.gpus[0].name}</span>
+              : 'GPU'}
+          </div>
+          <span className="text-sm font-semibold tabular-nums">
+            {data === null ? dash : data.gpus === null ? 'N/A' : `${data.gpus[0].utilization}%`}
+          </span>
+        </div>
+        {data?.gpus ? (
+          <div className="space-y-1.5">
+            <Bar pct={data.gpus[0].utilization} color="bg-orange-500" />
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-muted-foreground">VRAM</span>
+              <span className="text-[10px] tabular-nums text-muted-foreground">
+                {data.gpus[0].memUsed} / {data.gpus[0].memTotal} MB
+              </span>
+            </div>
+            <Bar pct={Math.round(data.gpus[0].memUsed / data.gpus[0].memTotal * 100)} color="bg-purple-500" />
+          </div>
+        ) : (
+          <Bar pct={0} color="bg-muted-foreground" />
+        )}
       </div>
     </div>
   );

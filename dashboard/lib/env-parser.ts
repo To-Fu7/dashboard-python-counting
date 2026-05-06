@@ -86,6 +86,7 @@ export function writeDeviceEnv(deviceCode: string, config: Partial<DeviceEnvConf
     `FRAME_SKIP=${config.FRAME_SKIP ?? '2'}`,
     '',
     '# DETECTION',
+    `DETECTION_MODE=${config.DETECTION_MODE ?? 'line_crossing'}`,
     `POINT_AXIS=${config.POINT_AXIS ?? 'Y'}`,
     `MERGE_GATES=${config.MERGE_GATES ?? 'false'}`,
     `SWAP_IN_OUT=${config.SWAP_IN_OUT ?? 'false'}`,
@@ -98,13 +99,23 @@ export function writeDeviceEnv(deviceCode: string, config: Partial<DeviceEnvConf
     '# LINES',
   ];
 
-  // Write all line* keys (lineA, lineC, lineE, ...)
+  // Write line* keys (lineA, lineC, lineE, ...)
   const lineKeys = Object.keys(config)
     .filter(k => /^line[A-Z]$/.test(k))
     .sort();
   for (const key of lineKeys) {
-    if (config[key]) {
-      lines.push(`${key}=${config[key]}`);
+    if (config[key]) lines.push(`${key}=${config[key]}`);
+  }
+
+  // Write zone* keys (zoneA, zoneB, ...)
+  const zoneKeys = Object.keys(config)
+    .filter(k => /^zone[A-Z]$/.test(k))
+    .sort();
+  if (zoneKeys.length > 0) {
+    lines.push('');
+    lines.push('# ZONES');
+    for (const key of zoneKeys) {
+      if (config[key]) lines.push(`${key}=${config[key]}`);
     }
   }
 

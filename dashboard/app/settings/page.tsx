@@ -71,7 +71,7 @@ export default function SettingsPage() {
         </FormField>
         <FormField label="Hardware Mode">
           <div className="flex gap-3 pt-1">
-            {(['jetson', 'server'] as const).map(mode => (
+            {(['jetson', 'server', 'cpu'] as const).map(mode => (
               <button
                 key={mode}
                 type="button"
@@ -82,7 +82,7 @@ export default function SettingsPage() {
                     : 'border-border text-muted-foreground hover:text-foreground hover:bg-accent'
                 }`}
               >
-                {mode === 'jetson' ? 'Jetson / Tegra' : 'Mini Server (runtime: nvidia)'}
+                {mode === 'jetson' ? 'Jetson / Tegra' : mode === 'server' ? 'Mini Server (runtime: nvidia)' : 'CPU Only'}
               </button>
             ))}
           </div>

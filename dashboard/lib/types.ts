@@ -33,6 +33,12 @@ export interface DeviceEnvConfig {
   LINE_OFFSET_AMOUNT: string;
   MQTT_INTERVAL_MINUTES?: string;
   DAILY_SEND_TIME?: string;
+  DETECTION_MODE?: string;  // 'line_crossing' | 'zone'
+  zoneA?: string;
+  zoneB?: string;
+  zoneC?: string;
+  zoneD?: string;
+  zoneE?: string;
   [key: string]: string | undefined;
 }
 
@@ -66,7 +72,7 @@ export interface ContainerInfo {
   image: string;
 }
 
-export type HardwareMode = 'jetson' | 'server';
+export type HardwareMode = 'jetson' | 'server' | 'cpu';
 
 export interface GlobalSettings {
   appName: string;

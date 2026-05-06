@@ -29,8 +29,7 @@ export async function PUT(
       return NextResponse.json({ error: 'Device not found' }, { status: 404 });
     }
 
-    const updated = { ...existing, ...body };
-    writeDeviceEnv(code, updated);
+    writeDeviceEnv(code, body);
     return NextResponse.json({ success: true });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });

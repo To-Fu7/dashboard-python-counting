@@ -108,6 +108,7 @@ export async function POST(request: Request) {
       DOT_OFFSET_AMOUNT: '0',
       LINE_OFFSET: 'Y',
       LINE_OFFSET_AMOUNT: '5',
+      DETECTION_MODE: 'line_crossing',
       lineA: '[(100, 300), (700, 300)]',
     });
 

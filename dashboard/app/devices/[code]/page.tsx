@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, use } from 'react';
+import { useEffect, useState, useCallback, useRef, use } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,13 +10,36 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { StatusBadge } from '@/components/StatusBadge';
 import { LineDrawer } from '@/components/LineDrawer';
+import { ZoneDrawer, type DrawnZone } from '@/components/ZoneDrawer';
 import { Play, Square, RotateCcw, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import type { DeviceEnvConfig, ContainerStatus } from '@/lib/types';
 
 interface DrawnLine { label: string; p1: { x: number; y: number }; p2: { x: number; y: number } }
+
+function envZonesToDrawn(env: Partial<DeviceEnvConfig>): DrawnZone[] {
+  const zones: DrawnZone[] = [];
+  for (const letter of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') {
+    const val = env[`zone${letter}`];
+    if (!val) break;
+    try {
+      const parsed = JSON.parse(val.replace(/\(/g, '[').replace(/\)/g, ']').replace(/'/g, '"'));
+      if (Array.isArray(parsed) && parsed.length >= 3) {
+        zones.push({ label: letter, points: parsed.map(([x, y]: [number, number]) => ({ x, y })) });
+      }
+    } catch { /* skip malformed */ }
+  }
+  return zones;
+}
+
+function drawnZonesToEnv(zones: DrawnZone[]): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const zone of zones) {
+    result[`zone${zone.label}`] = `[${zone.points.map(p => `(${p.x}, ${p.y})`).join(', ')}]`;
+  }
+  return result;
+}
 
 function parseResolution(res: string | undefined): [number, number] {
   if (!res) return [800, 600];
@@ -65,7 +88,10 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
   const [saving, setSaving] = useState(false);
   const [actionLoading, setActionLoading] = useState('');
   const [logs, setLogs] = useState<string[]>([]);
+  const [liveStreaming, setLiveStreaming] = useState(false);
+  const logScrollRef = useRef<HTMLDivElement>(null);
   const [lines, setLines] = useState<DrawnLine[]>([]);
+  const [zones, setZones] = useState<DrawnZone[]>([]);
 
   const fetchDevice = useCallback(async () => {
     try {
@@ -75,6 +101,7 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
       setEnv(data.env);
       setStatus(data.status);
       setLines(envLinesToDrawn(data.env));
+      setZones(envZonesToDrawn(data.env));
     } catch {
       toast.error('Failed to load device');
     } finally {
@@ -82,43 +109,69 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
     }
   }, [code, router]);
 
-  const fetchLogs = useCallback(async () => {
-    const res = await fetch(`/api/devices/${code}/logs?tail=100`);
-    const data = await res.json();
-    setLogs(data.logs || []);
-  }, [code]);
-
   useEffect(() => {
     fetchDevice();
   }, [fetchDevice]);
 
   useEffect(() => {
+    setLogs([]);
+    setLiveStreaming(false);
     if (status !== 'running') return;
-    fetchLogs();
-    const interval = setInterval(fetchLogs, 5000);
-    return () => clearInterval(interval);
-  }, [status, fetchLogs]);
+
+    const es = new EventSource(`/api/devices/${code}/logs/stream?tail=150`);
+    setLiveStreaming(true);
+
+    es.onmessage = (event) => {
+      try {
+        const parsed = JSON.parse(event.data);
+        if (typeof parsed === 'object' && parsed !== null) {
+          if (parsed.__eof) { setLiveStreaming(false); es.close(); }
+          return;
+        }
+        setLogs(prev => {
+          const next = [...prev, String(parsed)];
+          return next.length > 500 ? next.slice(-500) : next;
+        });
+        setTimeout(() => {
+          if (logScrollRef.current) {
+            logScrollRef.current.scrollTop = logScrollRef.current.scrollHeight;
+          }
+        }, 10);
+      } catch { /* ignore parse errors */ }
+    };
+
+    es.onerror = () => { setLiveStreaming(false); es.close(); };
+
+    return () => { es.close(); setLiveStreaming(false); };
+  }, [status, code]);
 
   function setField(key: string, value: string) {
     setEnv(prev => ({ ...prev, [key]: value }));
   }
 
   async function handleSave() {
-    if (lines.length === 0) {
+    const mode = env.DETECTION_MODE || 'line_crossing';
+
+    if (mode === 'line_crossing' && lines.length === 0) {
       toast.error('At least one detection line is required before saving.');
       return;
     }
+    if (mode === 'zone' && zones.length === 0) {
+      toast.error('At least one detection zone is required before saving.');
+      return;
+    }
+
     setSaving(true);
     try {
-      // Merge drawn lines into env
-      const lineVars = drawnLinesToEnv(lines);
-      // Clear old line vars not in current set
-      const clearOld: Record<string, string | undefined> = {};
-      const letters = 'ACEGIKMOQSUWY';
-      for (const letter of letters) {
-        clearOld[`line${letter}`] = undefined;
-      }
-      const payload = { ...env, ...clearOld, ...lineVars };
+      // Clear vars for the inactive mode
+      const clearLines: Record<string, undefined> = {};
+      const clearZones: Record<string, undefined> = {};
+      for (const letter of 'ACEGIKMOQSUWY') clearLines[`line${letter}`] = undefined;
+      for (const letter of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') clearZones[`zone${letter}`] = undefined;
+
+      const payload = mode === 'line_crossing'
+        ? { ...env, ...clearZones, ...clearLines, ...drawnLinesToEnv(lines) }
+        : { ...env, ...clearLines, ...clearZones, ...drawnZonesToEnv(zones) };
 
       const res = await fetch(`/api/devices/${code}`, {
         method: 'PUT',
@@ -142,7 +195,7 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       toast.success(`${action.charAt(0).toUpperCase() + action.slice(1)}ed`);
-      setTimeout(() => { fetchDevice(); fetchLogs(); }, 1500);
+      setTimeout(() => { fetchDevice(); }, 1500);
     } catch (e) {
       toast.error(`Failed to ${action}: ${e}`);
     } finally {
@@ -289,82 +342,117 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
 
         {/* ── LINE CONFIGURATION ── */}
         <TabsContent value="lines" className="space-y-6 pt-4">
-          <Section title="Detection Behavior">
-            <div className="grid grid-cols-2 gap-4">
-              <FormField label="Merge Gates">
-                <div className="flex items-center gap-2 pt-2">
-                  <Switch
-                    checked={env.MERGE_GATES === 'true'}
-                    onCheckedChange={v => setField('MERGE_GATES', v ? 'true' : 'false')}
-                  />
-                  <span className="text-xs text-muted-foreground">Treat all gates as one detection zone</span>
-                </div>
-              </FormField>
-              <FormField label="Swap In/Out Direction">
-                <div className="flex items-center gap-2 pt-2">
-                  <Switch
-                    checked={env.SWAP_IN_OUT === 'true'}
-                    onCheckedChange={v => setField('SWAP_IN_OUT', v ? 'true' : 'false')}
-                  />
-                  <span className="text-xs text-muted-foreground">Swap which crossing direction counts as IN</span>
-                </div>
-              </FormField>
-              <FormField label="Detection Style">
-                <Select value={env.DETECTION_STYLE || 'dot'} onValueChange={v => v && setField('DETECTION_STYLE', v)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="dot">DOT (center point)</SelectItem>
-                    <SelectItem value="line">LINE (bounding box edge)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </FormField>
-              <FormField label="Detection Point Axis">
-                <Select value={env.POINT_AXIS || 'Y'} onValueChange={v => v && setField('POINT_AXIS', v)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Y">Y (top/bottom)</SelectItem>
-                    <SelectItem value="X">X (left/right)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </FormField>
-              <FormField label="DOT Offset Axis">
-                <Select value={env.DOT_OFFSET || 'Y'} onValueChange={v => v && setField('DOT_OFFSET', v)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Y">Y</SelectItem>
-                    <SelectItem value="X">X</SelectItem>
-                  </SelectContent>
-                </Select>
-              </FormField>
-              <FormField label="DOT Offset Value">
-                <Input type="number" value={env.DOT_OFFSET_AMOUNT || '0'} onChange={e => setField('DOT_OFFSET_AMOUNT', e.target.value)} />
-              </FormField>
-              <FormField label="Line Offset Axis">
-                <Select value={env.LINE_OFFSET || 'Y'} onValueChange={v => v && setField('LINE_OFFSET', v)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Y">Y</SelectItem>
-                    <SelectItem value="X">X</SelectItem>
-                  </SelectContent>
-                </Select>
-              </FormField>
-              <FormField label="Line Offset Amount (OUT line gap)">
-                <Input type="number" value={env.LINE_OFFSET_AMOUNT || '5'} onChange={e => setField('LINE_OFFSET_AMOUNT', e.target.value)} />
-              </FormField>
+          <Section title="Detection Mode">
+            <div className="flex gap-3">
+              {(['line_crossing', 'zone'] as const).map(m => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setField('DETECTION_MODE', m)}
+                  className={`px-4 py-2 rounded-md text-sm border transition-colors ${
+                    (env.DETECTION_MODE || 'line_crossing') === m
+                      ? 'border-primary bg-primary/10 text-primary font-medium'
+                      : 'border-border text-muted-foreground hover:bg-accent'
+                  }`}
+                >
+                  {m === 'line_crossing' ? 'Line Crossing' : 'Zone Detection'}
+                </button>
+              ))}
             </div>
+            <p className="text-xs text-muted-foreground mt-1.5">
+              Modes are exclusive. Switching mode clears the other mode&apos;s configuration on save.
+            </p>
           </Section>
 
-          <Section title="Line Drawing">
-            <LineDrawer
-              deviceCode={code}
-              containerStatus={status}
-              resolution={parseResolution(env.SCREEN_RESOLUTION)}
-              initialLines={lines}
-              offsetAxis={env.LINE_OFFSET || 'Y'}
-              offsetAmount={parseInt(env.LINE_OFFSET_AMOUNT || '5', 10)}
-              onChange={setLines}
-            />
-          </Section>
+          {(env.DETECTION_MODE || 'line_crossing') === 'line_crossing' ? (
+            <>
+              <Section title="Detection Behavior">
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField label="Merge Gates">
+                    <div className="flex items-center gap-2 pt-2">
+                      <Switch
+                        checked={env.MERGE_GATES === 'true'}
+                        onCheckedChange={v => setField('MERGE_GATES', v ? 'true' : 'false')}
+                      />
+                      <span className="text-xs text-muted-foreground">Treat all gates as one detection zone</span>
+                    </div>
+                  </FormField>
+                  <FormField label="Swap In/Out Direction">
+                    <div className="flex items-center gap-2 pt-2">
+                      <Switch
+                        checked={env.SWAP_IN_OUT === 'true'}
+                        onCheckedChange={v => setField('SWAP_IN_OUT', v ? 'true' : 'false')}
+                      />
+                      <span className="text-xs text-muted-foreground">Swap which crossing direction counts as IN</span>
+                    </div>
+                  </FormField>
+                  <FormField label="Detection Style">
+                    <Select value={env.DETECTION_STYLE || 'dot'} onValueChange={v => v && setField('DETECTION_STYLE', v)}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="dot">DOT (center point)</SelectItem>
+                        <SelectItem value="line">LINE (bounding box edge)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </FormField>
+                  <FormField label="Detection Point Axis">
+                    <Select value={env.POINT_AXIS || 'Y'} onValueChange={v => v && setField('POINT_AXIS', v)}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Y">Y (top/bottom)</SelectItem>
+                        <SelectItem value="X">X (left/right)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </FormField>
+                  <FormField label="DOT Offset Axis">
+                    <Select value={env.DOT_OFFSET || 'Y'} onValueChange={v => v && setField('DOT_OFFSET', v)}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Y">Y</SelectItem>
+                        <SelectItem value="X">X</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </FormField>
+                  <FormField label="DOT Offset Value">
+                    <Input type="number" value={env.DOT_OFFSET_AMOUNT || '0'} onChange={e => setField('DOT_OFFSET_AMOUNT', e.target.value)} />
+                  </FormField>
+                  <FormField label="Line Offset Axis">
+                    <Select value={env.LINE_OFFSET || 'Y'} onValueChange={v => v && setField('LINE_OFFSET', v)}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Y">Y</SelectItem>
+                        <SelectItem value="X">X</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </FormField>
+                  <FormField label="Line Offset Amount (OUT line gap)">
+                    <Input type="number" value={env.LINE_OFFSET_AMOUNT || '5'} onChange={e => setField('LINE_OFFSET_AMOUNT', e.target.value)} />
+                  </FormField>
+                </div>
+              </Section>
+
+              <Section title="Line Drawing">
+                <LineDrawer
+                  deviceCode={code}
+                  containerStatus={status}
+                  resolution={parseResolution(env.SCREEN_RESOLUTION)}
+                  initialLines={lines}
+                  offsetAxis={env.LINE_OFFSET || 'Y'}
+                  offsetAmount={parseInt(env.LINE_OFFSET_AMOUNT || '5', 10)}
+                  onChange={setLines}
+                />
+              </Section>
+            </>
+          ) : (
+            <Section title="Zone Drawing">
+              <ZoneDrawer
+                deviceCode={code}
+                resolution={parseResolution(env.SCREEN_RESOLUTION)}
+                initialZones={zones}
+                onChange={setZones}
+              />
+            </Section>
+          )}
 
           <div className="flex justify-end">
             <Button onClick={handleSave} disabled={saving}>
@@ -376,12 +464,29 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
         {/* ── LOGS ── */}
         <TabsContent value="logs" className="pt-4">
           <Section title="Service Logs">
-            <div className="flex justify-end mb-2">
-              <Button size="sm" variant="outline" onClick={fetchLogs}>Refresh</Button>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                {liveStreaming ? (
+                  <span className="flex items-center gap-1.5 text-xs text-green-400">
+                    <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse inline-block" />
+                    Live
+                  </span>
+                ) : (
+                  <span className="text-xs text-muted-foreground">
+                    {status !== 'running' ? 'Container not running' : 'Connecting...'}
+                  </span>
+                )}
+              </div>
+              <Button size="sm" variant="ghost" onClick={() => setLogs([])}>Clear</Button>
             </div>
-            <ScrollArea className="h-96 rounded border border-border bg-black/90 p-3">
+            <div
+              ref={logScrollRef}
+              className="h-96 rounded border border-border bg-black/90 p-3 overflow-y-auto"
+            >
               {logs.length === 0 ? (
-                <p className="text-xs text-gray-500">No logs available.</p>
+                <p className="text-xs text-gray-500">
+                  {status === 'running' ? 'Waiting for logs...' : 'No logs available.'}
+                </p>
               ) : (
                 <div className="space-y-0.5">
                   {logs.map((line, i) => (
@@ -389,7 +494,7 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
                   ))}
                 </div>
               )}
-            </ScrollArea>
+            </div>
           </Section>
         </TabsContent>
       </Tabs>

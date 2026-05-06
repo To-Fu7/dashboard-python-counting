@@ -45,6 +45,37 @@ function parseResolution(res: string | undefined): [number, number] {
 
 const LINE_COLORS = ['#3b82f6', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#ec4899'];
 
+function parseZonesFromEnv(env: Record<string, string>): Array<Array<[number, number]>> {
+  const zones: Array<Array<[number, number]>> = [];
+  for (const letter of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') {
+    const val = env[`zone${letter}`];
+    if (!val) break;
+    try {
+      const parsed = JSON.parse(val.replace(/\(/g, '[').replace(/\)/g, ']').replace(/'/g, '"'));
+      if (Array.isArray(parsed) && parsed.length >= 3) zones.push(parsed as Array<[number, number]>);
+    } catch { /* skip */ }
+  }
+  return zones;
+}
+
+function drawZoneOverlay(ctx: CanvasRenderingContext2D, zones: Array<Array<[number, number]>>) {
+  zones.forEach((pts, i) => {
+    const color = LINE_COLORS[i % LINE_COLORS.length];
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    pts.slice(1).forEach(([x, y]) => ctx.lineTo(x, y));
+    ctx.closePath();
+    ctx.fillStyle = `${color}40`;
+    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([]);
+    ctx.stroke();
+    ctx.restore();
+  });
+}
+
 function drawLineOverlay(
   ctx: CanvasRenderingContext2D,
   lines: Array<{ p1: [number, number]; p2: [number, number] }>,
@@ -86,13 +117,19 @@ function StreamCell({ device }: { device: Device }) {
   const [connecting, setConnecting] = useState(true);
   const [streamError, setStreamError] = useState(false);
   const resolution = parseResolution(device.env?.SCREEN_RESOLUTION);
-  const lines = device.env ? parseLinesFromEnv(device.env as Record<string, string>) : [];
+  const detectionMode = device.env?.DETECTION_MODE || 'line_crossing';
+  const lines = detectionMode === 'line_crossing' && device.env
+    ? parseLinesFromEnv(device.env as Record<string, string>) : [];
+  const zones = detectionMode === 'zone' && device.env
+    ? parseZonesFromEnv(device.env as Record<string, string>) : [];
   const offsetAxis = device.env?.LINE_OFFSET ?? 'Y';
   const offsetAmount = parseInt(device.env?.LINE_OFFSET_AMOUNT ?? '5', 10);
 
   // Keep latest overlay data accessible inside the EventSource closure without re-subscribing
-  const overlayRef = useRef({ lines, offsetAxis, offsetAmount });
-  useEffect(() => { overlayRef.current = { lines, offsetAxis, offsetAmount }; }, [lines, offsetAxis, offsetAmount]);
+  const overlayRef = useRef({ lines, zones, offsetAxis, offsetAmount, detectionMode });
+  useEffect(() => {
+    overlayRef.current = { lines, zones, offsetAxis, offsetAmount, detectionMode };
+  }, [lines, zones, offsetAxis, offsetAmount, detectionMode]);
 
   useEffect(() => {
     if (device.status !== 'running') return;
@@ -114,8 +151,9 @@ function StreamCell({ device }: { device: Device }) {
       const img = new Image();
       img.onload = () => {
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        const { lines: l, offsetAxis: oa, offsetAmount: oamt } = overlayRef.current;
-        if (l.length > 0) drawLineOverlay(ctx, l, oa, oamt);
+        const { lines: l, zones: z, offsetAxis: oa, offsetAmount: oamt, detectionMode: dm } = overlayRef.current;
+        if (dm === 'line_crossing' && l.length > 0) drawLineOverlay(ctx, l, oa, oamt);
+        else if (dm === 'zone' && z.length > 0) drawZoneOverlay(ctx, z);
         drawPending = false;
       };
       img.src = `data:image/jpeg;base64,${event.data}`;

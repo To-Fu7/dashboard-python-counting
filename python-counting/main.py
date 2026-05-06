@@ -32,7 +32,14 @@ last_points = defaultdict(lambda: (None, None))
 state_in = defaultdict(lambda: False)
 state_out = defaultdict(lambda: False)
 prev_intersecting = defaultdict(lambda: False)
+zone_inside_prev = defaultdict(lambda: False)  # key: (track_id, zone_index)
 class_counts = defaultdict(int)
+
+# Hourly resample tracking
+resample_record_id = None
+resample_hour_in = 0
+resample_hour_out = 0
+current_tracking_hour = None
 person_history = {}
 is_midnight = False
 record_id = ''
@@ -95,6 +102,9 @@ LINE_OFFSET_AMOUNT = int(os.getenv('LINE_OFFSET_AMOUNT', 5))
 
 DOT_OFFSET = os.getenv('DOT_OFFSET', 'Y')
 DOT_OFFSET_AMOUNT = int(os.getenv('DOT_OFFSET_AMOUNT', 0))
+
+# Detection mode: 'line_crossing' (default) or 'zone'
+DETECTION_MODE = os.getenv('DETECTION_MODE', 'line_crossing').lower()
 
 # Swap IN/OUT detection order
 # False = Cross OUT line first, then IN line to count IN (default)
@@ -209,37 +219,75 @@ def load_line_pairs_from_env():
     return line_pairs
 
 
-# Load all line pairs at startup
-LINE_PAIRS = load_line_pairs_from_env()
+def load_zones_from_env():
+    """Load polygon zones from environment variables (zoneA, zoneB, ...)."""
+    zones = []
+    for letter in string.ascii_uppercase:
+        val = os.getenv(f'zone{letter}')
+        if not val:
+            break
+        try:
+            pts = ast.literal_eval(val)
+            pts_array = np.array(pts, dtype=np.float32)
+            if len(pts_array) < 3:
+                logging.warning(f'zone{letter} has fewer than 3 points, skipping')
+                continue
+            zones.append({'name': f'zone{letter}', 'polygon': pts_array})
+            logging.info(f'Loaded zone{letter} with {len(pts_array)} vertices')
+        except Exception as e:
+            logging.error(f'Failed to parse zone{letter}: {e}')
+    return zones
 
-# For backward-compatibility, keep references to the first pair as lineA/lineB
-lineA = LINE_PAIRS[0]["in_line"]
-lineB = LINE_PAIRS[0]["out_line"]
 
-logging.info(f"Total line pairs loaded: {len(LINE_PAIRS)}")
+# Mode-conditional startup
+if DETECTION_MODE == 'line_crossing':
+    LINE_PAIRS = load_line_pairs_from_env()
+    lineA = LINE_PAIRS[0]["in_line"]
+    lineB = LINE_PAIRS[0]["out_line"]
+    logging.info(f"Total line pairs loaded: {len(LINE_PAIRS)}")
+else:
+    LINE_PAIRS = []
+
+if DETECTION_MODE == 'zone':
+    ZONES = load_zones_from_env()
+    if not ZONES:
+        raise RuntimeError(
+            "DETECTION_MODE=zone but no zone polygons defined. "
+            "Define at least 'zoneA' in the environment."
+        )
+else:
+    ZONES = []
+
+logging.info(f"DETECTION_MODE = {DETECTION_MODE}")
 logging.info(f"SWAP_IN_OUT = {SWAP_IN_OUT} ({'IN line first → count IN' if SWAP_IN_OUT else 'OUT line first → count IN'})")
 logging.info(f"MERGE_GATES = {MERGE_GATES} ({'all gates unified' if MERGE_GATES else 'gates isolated'})")
 
 
-# Detection region parameters (based on all line pairs)
+# Detection region parameters
 # 'false' or '0' = global detection (full frame), any number = margin in pixels
 _detection_margin_raw = os.getenv('DETECTION_MARGIN', '160').strip().lower()
 GLOBAL_DETECTION = _detection_margin_raw in ('false', '0')
 DETECTION_MARGIN = 0 if GLOBAL_DETECTION else int(_detection_margin_raw)
 
-all_line_points_y = []
-for lp in LINE_PAIRS:
-    for (x, y) in lp["in_line"] + lp["out_line"]:
-        all_line_points_y.append(y)
+if DETECTION_MODE == 'line_crossing' and LINE_PAIRS:
+    all_line_points_y = []
+    for lp in LINE_PAIRS:
+        for (x, y) in lp["in_line"] + lp["out_line"]:
+            all_line_points_y.append(y)
 
-if GLOBAL_DETECTION:
-    DETECTION_Y_MIN = 0
-    DETECTION_Y_MAX = None  # Will use full frame height
-    logging.info("Detection region: GLOBAL (full frame)")
+    if GLOBAL_DETECTION:
+        DETECTION_Y_MIN = 0
+        DETECTION_Y_MAX = None  # Will use full frame height
+        logging.info("Detection region: GLOBAL (full frame)")
+    else:
+        DETECTION_Y_MIN = max(0, min(all_line_points_y) - DETECTION_MARGIN)
+        DETECTION_Y_MAX = max(all_line_points_y) + DETECTION_MARGIN
+        logging.info(f"Detection region: Y from {DETECTION_Y_MIN} to {DETECTION_Y_MAX} (margin: {DETECTION_MARGIN}px)")
 else:
-    DETECTION_Y_MIN = max(0, min(all_line_points_y) - DETECTION_MARGIN)
-    DETECTION_Y_MAX = max(all_line_points_y) + DETECTION_MARGIN
-    logging.info(f"Detection region: Y from {DETECTION_Y_MIN} to {DETECTION_Y_MAX} (margin: {DETECTION_MARGIN}px)")
+    # Zone mode: always scan full frame
+    DETECTION_Y_MIN = 0
+    DETECTION_Y_MAX = None
+    logging.info("Detection region: GLOBAL (full frame, zone mode)")
 
 # Image quality settings
 CROP_PADDING = 30
@@ -431,6 +479,11 @@ def send_interval_mqtt_data():
 
         if result.rc == mqtt.MQTT_ERR_SUCCESS:
             logging.info(f"Interval data sent via MQTT - Interval IN: {snapshot_in}, Interval OUT: {snapshot_out}, Total IN: {person_in}, Total OUT: {person_out}")
+            if resample_record_id is not None:
+                db_queue_write(
+                    "UPDATE inout_resample SET interval_in = %s, interval_out = %s, updated_at = now() WHERE id = %s",
+                    (resample_hour_in, resample_hour_out, resample_record_id)
+                )
         else:
             # Restore counters on publish failure
             interval_person_in += snapshot_in
@@ -688,18 +741,20 @@ def db_query(sql, params=(), commit=False, max_retry=3):
     logging.error("DB operation failed after max retries.")
     return False
 
-def db_fetch(sql, params=(), max_retry=3):
+def db_fetch(sql, params=(), commit=False, max_retry=3):
     """Fetch data from database with retry logic"""
     global pg_conn, cursor
-    
+
     if DEBUG_MODE:
         logging.info(f"DEBUG_MODE: Skipping DB fetch: {sql}")
         return None
-    
+
     retry = 0
     while retry < max_retry:
         try:
             cursor.execute(sql, params)
+            if commit:
+                pg_conn.commit()
             return cursor.fetchone()
         except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
             logging.error(f"Database lost connection: {e} (retry {retry+1}/{max_retry})")
@@ -789,6 +844,7 @@ def initialize_counts():
         person_out = class_counts['out']
         record_id = last_data_id['id']
         logging.info(f"Restored counts from DB ({last_date_local}): IN={person_in}, OUT={person_out}")
+        init_resample_record()
         return last_data_id
     else:
         new_id = str(uuid.uuid4())
@@ -801,6 +857,7 @@ def initialize_counts():
             person_in = 0
             person_out = 0
             logging.info(f"No valid counts to restore, created new record with id {new_id}")
+            init_resample_record()
             return {"id": new_id}
         else:
             logging.error("Failed to create new row")
@@ -808,19 +865,21 @@ def initialize_counts():
 
 def reset_counts():
     """Reset counts at midnight"""
-    global class_counts, state_in, state_out, prev_intersecting, person_history, record_id, person_in, person_out, last_mqtt_send, last_daily_send, interval_person_in, interval_person_out
-    
+    global class_counts, state_in, state_out, prev_intersecting, person_history, record_id, person_in, person_out, last_mqtt_send, last_daily_send, interval_person_in, interval_person_out, resample_hour_in, resample_hour_out
+
     # Send final daily report before reset
     send_interval_mqtt_data()
-    
+
     person_in, person_out = 0, 0
-    interval_person_in, interval_person_out = 0, 0  # Reset interval counters too
+    interval_person_in, interval_person_out = 0, 0
+    resample_hour_in, resample_hour_out = 0, 0
     class_counts.clear()
     class_counts['in'] = 0
     class_counts['out'] = 0
     state_in.clear()
     state_out.clear()
     prev_intersecting.clear()
+    zone_inside_prev.clear()
     person_history.clear()
     
     new_id = str(uuid.uuid4())
@@ -831,14 +890,55 @@ def reset_counts():
         logging.info("== Midnight Reached: Totals Reset (DEBUG_MODE: Skipping DB operation) ==")
     else:
         success = db_query("INSERT INTO person_inout (id, device_id, total_in, total_out) VALUES (%s, %s, %s, %s)",
-                        (new_id, device_id, 0, 0), commit=True)   
+                        (new_id, device_id, 0, 0), commit=True)
         if success:
             record_id = new_id
-            # Reset MQTT timers
             last_mqtt_send = None
             logging.info("== Midnight Reached: Totals Reset ==")
         else:
             logging.error("Error creating new record at midnight")
+
+    init_resample_record()
+
+def init_resample_record():
+    """Upsert an inout_resample row for the current hour slot."""
+    global resample_record_id, resample_hour_in, resample_hour_out, current_tracking_hour
+
+    current_time = datetime.datetime.now(local_tz)
+    hour_slot = current_time.replace(minute=0, second=0, microsecond=0)
+    current_tracking_hour = hour_slot
+
+    result = db_fetch(
+        """
+        INSERT INTO inout_resample (device_id, device_name, device_code, interval_in, interval_out, hour_start)
+        VALUES (%s, %s, %s, 0, 0, %s)
+        ON CONFLICT (device_id, hour_start) DO UPDATE
+            SET device_name = EXCLUDED.device_name,
+                device_code = EXCLUDED.device_code
+        RETURNING id, interval_in, interval_out
+        """,
+        (device_id, device_name, device_code, hour_slot),
+        commit=True,
+    )
+
+    if result:
+        resample_record_id = result[0]
+        resample_hour_in   = result[1]
+        resample_hour_out  = result[2]
+        logging.info(f"Resample record upserted for {hour_slot}: IN={resample_hour_in}, OUT={resample_hour_out}")
+    else:
+        logging.error(f"Failed to upsert resample record for {hour_slot}")
+
+
+def handle_hour_change():
+    """Send final interval data for the completed hour, then start tracking the new hour."""
+    global resample_hour_in, resample_hour_out
+
+    send_interval_mqtt_data()
+    resample_hour_in  = 0
+    resample_hour_out = 0
+    init_resample_record()
+
 
 def crop_image(frame, box, padding=None):
     """Crop image around detected person with improved quality"""
@@ -980,9 +1080,22 @@ def main():
                 # Run YOLO only on the detection region with confidence threshold
                 results = model.track(detection_frame, persist=True, verbose=False, conf=YOLO_CONFIDENCE, device=resolved_device, classes=[0], iou=0.45, tracker="bytetrack.yaml")
 
-                # Draw all IN/OUT lines (only in DEBUG_MODE)
+                # Draw detection overlays (only in DEBUG_MODE)
                 if DEBUG_MODE:
-                    for lp in LINE_PAIRS:
+                    if DETECTION_MODE == 'zone':
+                        zone_colors_bgr = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (0, 255, 255), (255, 0, 255)]
+                        for zi, zone in enumerate(ZONES):
+                            color = zone_colors_bgr[zi % len(zone_colors_bgr)]
+                            pts = zone['polygon'].astype(np.int32).reshape((-1, 1, 2))
+                            overlay = frame.copy()
+                            cv2.fillPoly(overlay, [pts], color)
+                            cv2.addWeighted(overlay, 0.25, frame, 0.75, 0, frame)
+                            cv2.polylines(frame, [pts], True, color, 2)
+                            label_pt = tuple(zone['polygon'][0].astype(int))
+                            cv2.putText(frame, zone['name'], label_pt,
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+
+                    for lp in (LINE_PAIRS if DETECTION_MODE == 'line_crossing' else []):
                         # IN LINE ( BLUE ) (BGR)
                         cv2.line(frame, lp["in_line"][0], lp["in_line"][1], (255, 0, 0), 4)
                         # OUT LINE ( YELLOW ) (BGR)
@@ -1026,8 +1139,8 @@ def main():
                         cv2.putText(frame, 'Detection Region', (10, DETECTION_Y_MIN - 10),
                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
-                # Only copy frame in DEBUG_MODE, otherwise use reference (saves CPU)
-                if DEBUG_MODE:
+                # Copy frame for DEBUG_MODE annotations or zone MQTT (needs annotated copy)
+                if DEBUG_MODE or DETECTION_MODE == 'zone':
                     original_frame = frame.copy()
                 else:
                     original_frame = frame
@@ -1071,43 +1184,46 @@ def main():
                             latest_person_coordinates.append(person_coord)
                             
                             
-                            # Calculate detection points/edges based on DETECTION_STYLE
-                            if DETECTION_STYLE == 'line':
-                                if POINT_AXIS == "Y":
-                                    first_edge = ((x1, y1), (x2, y1))
-                                    second_edge = ((x1, y2), (x2, y2))
-                                elif POINT_AXIS == "X":
-                                    first_edge = ((x1, y1), (x1, y2))
-                                    second_edge = ((x2, y1), (x2, y2))
-                            else:
-                                if POINT_AXIS == "Y":
-                                    first_point = ((x1 + x2) // 2, y1 - DOT_OFFSET_AMOUNT)
-                                    second_point = ((x1 + x2) // 2, y2 + DOT_OFFSET_AMOUNT)
-                                elif POINT_AXIS == "X":
-                                    first_point = (x1 - DOT_OFFSET_AMOUNT, (y1 + y2) // 2)
-                                    second_point = (x2 + DOT_OFFSET_AMOUNT, (y1 + y2) // 2)
+                            # Calculate detection points/edges (line_crossing mode only)
+                            if DETECTION_MODE == 'line_crossing':
+                                if DETECTION_STYLE == 'line':
+                                    if POINT_AXIS == "Y":
+                                        first_edge = ((x1, y1), (x2, y1))
+                                        second_edge = ((x1, y2), (x2, y2))
+                                    elif POINT_AXIS == "X":
+                                        first_edge = ((x1, y1), (x1, y2))
+                                        second_edge = ((x2, y1), (x2, y2))
+                                else:
+                                    if POINT_AXIS == "Y":
+                                        first_point = ((x1 + x2) // 2, y1 - DOT_OFFSET_AMOUNT)
+                                        second_point = ((x1 + x2) // 2, y2 + DOT_OFFSET_AMOUNT)
+                                    elif POINT_AXIS == "X":
+                                        first_point = (x1 - DOT_OFFSET_AMOUNT, (y1 + y2) // 2)
+                                        second_point = (x2 + DOT_OFFSET_AMOUNT, (y1 + y2) // 2)
 
-                            # Draw person detection (only in DEBUG_MODE)
+                            # Draw person bounding box (only in DEBUG_MODE)
                             if DEBUG_MODE:
                                 cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
                                 cvzone.putTextRect(frame, f'{track_id}', (x1, y1), 1, 1)
-                                if DETECTION_STYLE == 'line':
-                                    cv2.line(frame, first_edge[0], first_edge[1], (255, 0, 0), 2)
-                                    cv2.line(frame, second_edge[0], second_edge[1], (0, 255, 255), 2)
-                                else:
-                                    cv2.circle(frame, first_point, 4, (255, 0, 0), 2)
-                                    cv2.circle(frame, second_point, 4, (0, 255, 255), 2)
+                                if DETECTION_MODE == 'line_crossing':
+                                    if DETECTION_STYLE == 'line':
+                                        cv2.line(frame, first_edge[0], first_edge[1], (255, 0, 0), 2)
+                                        cv2.line(frame, second_edge[0], second_edge[1], (0, 255, 255), 2)
+                                    else:
+                                        cv2.circle(frame, first_point, 4, (255, 0, 0), 2)
+                                        cv2.circle(frame, second_point, 4, (0, 255, 255), 2)
 
-                            # Determine if crossing detection can run
-                            can_check_crossing = True
-                            if DETECTION_STYLE != 'line':
-                                prev_points = last_points[track_id]
-                                if prev_points[0] is None or prev_points[1] is None:
-                                    can_check_crossing = False
-                                else:
-                                    prev_top, prev_bottom = prev_points
+                            if DETECTION_MODE == 'line_crossing':
+                                # Determine if crossing detection can run
+                                can_check_crossing = True
+                                if DETECTION_STYLE != 'line':
+                                    prev_points = last_points[track_id]
+                                    if prev_points[0] is None or prev_points[1] is None:
+                                        can_check_crossing = False
+                                    else:
+                                        prev_top, prev_bottom = prev_points
 
-                            if can_check_crossing:
+                            if DETECTION_MODE == 'line_crossing' and can_check_crossing:
                                 # Check crossings against all line pairs
                                 for gate_index, lp in enumerate(LINE_PAIRS):
                                     gate_key = track_id if MERGE_GATES else (track_id, gate_index)
@@ -1137,6 +1253,7 @@ def main():
                                             if state_out.get(gate_key):
                                                 person_out += 1
                                                 interval_person_out += 1
+                                                resample_hour_out += 1
                                                 class_counts['out'] = person_out
 
                                                 # Async DB update (non-blocking)
@@ -1161,6 +1278,7 @@ def main():
                                             if state_in.get(gate_key):
                                                 person_in += 1
                                                 interval_person_in += 1
+                                                resample_hour_in += 1
                                                 class_counts['in'] = person_in
 
                                                 # Async DB update (non-blocking)
@@ -1186,6 +1304,7 @@ def main():
                                             if state_in.get(gate_key):
                                                 person_in += 1
                                                 interval_person_in += 1
+                                                resample_hour_in += 1
                                                 class_counts['in'] = person_in
 
                                                 # Async DB update (non-blocking)
@@ -1210,6 +1329,7 @@ def main():
                                             if state_out.get(gate_key):
                                                 person_out += 1
                                                 interval_person_out += 1
+                                                resample_hour_out += 1
                                                 class_counts['out'] = person_out
 
                                                 # Async DB update (non-blocking)
@@ -1230,9 +1350,48 @@ def main():
                                                     f'Person {track_id} crossed OUT line of {gate_label} (preparing for In)'
                                                 )
 
-                            if DETECTION_STYLE != 'line':
+                            if DETECTION_MODE == 'line_crossing' and DETECTION_STYLE != 'line':
                                 last_points[track_id] = (first_point, second_point)
-                
+
+                            elif DETECTION_MODE == 'zone':
+                                cx = int((x1 + x2) // 2)
+                                cy = int((y1 + y2) // 2)
+
+                                for zone_idx, zone in enumerate(ZONES):
+                                    zone_key = (track_id, zone_idx)
+                                    inside = cv2.pointPolygonTest(
+                                        zone['polygon'], (float(cx), float(cy)), False
+                                    ) >= 0
+                                    was_inside = zone_inside_prev[zone_key]
+
+                                    if inside and not was_inside:
+                                        # ENTRY EVENT — annotate a copy of the frame
+                                        person_in += 1
+                                        interval_person_in += 1
+                                        resample_hour_in += 1
+                                        class_counts['in'] = person_in
+
+                                        db_queue_write(
+                                            "UPDATE person_inout SET total_in = %s WHERE id = %s",
+                                            (person_in, record_id)
+                                        )
+
+                                        annotated = original_frame.copy()
+                                        cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                                        cv2.putText(
+                                            annotated, f'ID:{track_id}',
+                                            (x1, max(0, y1 - 8)),
+                                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2
+                                        )
+
+                                        send_person_in_mqtt(annotated, record_id, "zone_entry")
+                                        logging.info(
+                                            f'Person {track_id} entered {zone["name"]} '
+                                            f'— Total IN: {person_in}'
+                                        )
+
+                                    zone_inside_prev[zone_key] = inside
+
                 # Check for interval MQTT sending
                 if should_send_interval_mqtt():
                     send_interval_mqtt_data()
@@ -1264,11 +1423,17 @@ def main():
                     fps_counter = 0
                     fps_timer = time.time()
 
+                # Handle hourly resample record rotation (skip if midnight reset will handle it)
+                if not should_reset() and current_tracking_hour is not None:
+                    _now_hour = datetime.datetime.now(local_tz).replace(minute=0, second=0, microsecond=0)
+                    if _now_hour != current_tracking_hour:
+                        handle_hour_change()
+
                 # Handle midnight reset
                 if should_reset() and not is_midnight:
                     reset_counts()
                     is_midnight = True
-                    
+
                 if not should_reset() and is_midnight:
                     is_midnight = False
 
