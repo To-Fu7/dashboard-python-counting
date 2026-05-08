@@ -19,6 +19,9 @@ export async function GET(
   const isLocalDevice = /^(\d+|\/dev\/)/.test(rtspUrl);
   const encoder = new TextEncoder();
 
+  const fpsLimit = parseFloat(env.FPS_LIMIT ?? '0');
+  const streamFps = fpsLimit > 0 ? String(Math.min(fpsLimit, 30)) : '10';
+
   const stream = new ReadableStream({
     start(controller) {
       const args = [
@@ -27,7 +30,7 @@ export async function GET(
         '-i', rtspUrl,
         '-f', 'mpjpeg',
         '-q:v', '5',
-        '-r', '10',
+        '-r', streamFps,
         'pipe:1',
       ];
       ffmpeg = spawn('ffmpeg', args);

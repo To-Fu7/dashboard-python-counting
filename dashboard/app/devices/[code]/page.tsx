@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { StatusBadge } from '@/components/StatusBadge';
 import { LineDrawer } from '@/components/LineDrawer';
 import { ZoneDrawer, type DrawnZone } from '@/components/ZoneDrawer';
-import { Play, Square, RotateCcw, ArrowLeft } from 'lucide-react';
+import { Play, Square, RotateCcw, ArrowLeft, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import type { DeviceEnvConfig, ContainerStatus } from '@/lib/types';
@@ -81,6 +81,12 @@ function drawnLinesToEnv(lines: DrawnLine[]): Record<string, string> {
 export default function DeviceDetailPage({ params }: { params: Promise<{ code: string }> }) {
   const { code } = use(params);
   const router = useRouter();
+
+  const [activeTab, setActiveTab] = useState('basic');
+  useEffect(() => {
+    const tab = new URLSearchParams(window.location.search).get('tab');
+    if (tab) setActiveTab(tab);
+  }, []);
 
   const [env, setEnv] = useState<Partial<DeviceEnvConfig>>({});
   const [status, setStatus] = useState<ContainerStatus>('unknown');
@@ -239,7 +245,7 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
         </div>
       </div>
 
-      <Tabs defaultValue="basic">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="basic">Basic Settings</TabsTrigger>
           <TabsTrigger value="lines">Line Configuration</TabsTrigger>
@@ -462,7 +468,12 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
         </TabsContent>
 
         {/* ── LOGS ── */}
-        <TabsContent value="logs" className="pt-4">
+        <TabsContent value="logs" className="pt-4 space-y-4">
+          {status === 'running' && (
+            <Section title="Live Stream">
+              <StreamPreview code={code} />
+            </Section>
+          )}
           <Section title="Service Logs">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
@@ -517,6 +528,57 @@ function FormField({ label, hint, children }: { label: string; hint?: string; ch
       <Label>{label}</Label>
       {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
       {children}
+    </div>
+  );
+}
+
+function StreamPreview({ code }: { code: string }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [connecting, setConnecting] = useState(true);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    setConnecting(true);
+    setError(false);
+
+    const es = new EventSource(`/api/stream/${code}`);
+    let drawPending = false;
+
+    es.onmessage = (event) => {
+      if (drawPending) return;
+      drawPending = true;
+      setConnecting(false);
+      const img = new Image();
+      img.onload = () => {
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        drawPending = false;
+      };
+      img.src = `data:image/jpeg;base64,${event.data}`;
+    };
+
+    es.onerror = () => { setError(true); es.close(); };
+
+    return () => es.close();
+  }, [code]);
+
+  return (
+    <div className="relative bg-black rounded-lg overflow-hidden aspect-video max-h-52">
+      <canvas ref={canvasRef} width={800} height={600} className="w-full h-full" />
+      {connecting && !error && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/70">
+          <Loader2 className="w-5 h-5 text-white/40 animate-spin" />
+        </div>
+      )}
+      {error && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/70">
+          <p className="text-xs text-gray-400">Stream unavailable</p>
+        </div>
+      )}
     </div>
   );
 }

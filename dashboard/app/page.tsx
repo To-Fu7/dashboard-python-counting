@@ -292,15 +292,17 @@ function DeviceCard({
 
   return (
     <Card className="flex flex-col">
-      <CardHeader className="pb-3">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <p className="font-medium truncate">{device.deviceName}</p>
-            <p className="text-xs text-muted-foreground font-mono">{device.deviceCode}</p>
+      <Link href={`/devices/${device.deviceCode}?tab=logs`} className="hover:bg-muted/40 transition-colors rounded-t-lg">
+        <CardHeader className="pb-3">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="font-medium truncate">{device.deviceName}</p>
+              <p className="text-xs text-muted-foreground font-mono">{device.deviceCode}</p>
+            </div>
+            <StatusBadge status={device.status} />
           </div>
-          <StatusBadge status={device.status} />
-        </div>
-      </CardHeader>
+        </CardHeader>
+      </Link>
 
       <CardContent className="flex-1 space-y-3">
         {device.rtspUrl && (

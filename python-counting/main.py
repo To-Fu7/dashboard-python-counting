@@ -299,6 +299,7 @@ JPEG_QUALITY = int(os.getenv('JPEG_QUALITY', 70))  # Lower quality = faster enco
 YOLO_MODEL = os.getenv('YOLO_MODEL', 'yolo11n.pt')
 YOLO_CONFIDENCE = float(os.getenv('YOLO_CONFIDENCE', 0.3))  # Confidence threshold (0.0-1.0)
 YOLO_DEVICE = os.getenv('YOLO_DEVICE', 'auto')  # Device: 'auto', 'cpu', '0', 'cuda:0'
+YOLO_IMGSZ = int(os.getenv('YOLO_IMGSZ', '640'))
 
 # PERFORMANCE
 FPS_LIMIT = float(os.getenv('FPS_LIMIT', '0'))  # 0 = no limit, >0 = max processing FPS
@@ -320,6 +321,38 @@ def resolve_yolo_device(device_str):
         return resolved
     logging.info(f"YOLO_DEVICE set to: {device_str}")
     return device_str
+
+def get_or_create_trt_engine(pt_model_path, imgsz=640, device='0'):
+    """Return path to TRT engine (cache hit or export from .pt)."""
+    base = os.path.splitext(pt_model_path)[0]
+    engine_path = f"{base}_imgsz{imgsz}_fp16_dynamic.engine"
+
+    if os.path.exists(engine_path):
+        logging.info(f"[TRT] Engine cache hit: {engine_path}")
+        return engine_path
+
+    logging.info(f"[TRT] Exporting {pt_model_path} → {engine_path} (one-time, 30–120s)...")
+    try:
+        from ultralytics import YOLO as _YOLO
+        _YOLO(pt_model_path).export(
+            format='engine', imgsz=imgsz, half=True,
+            device=device, simplify=True, verbose=False,
+            dynamic=True,
+        )
+    except Exception as e:
+        logging.error(f"[TRT] Export failed: {e}. Falling back to .pt")
+        return pt_model_path
+
+    default_engine = base + '.engine'
+    if os.path.exists(default_engine) and default_engine != engine_path:
+        os.rename(default_engine, engine_path)
+
+    if not os.path.exists(engine_path):
+        logging.error("[TRT] Engine not found after export. Falling back to .pt")
+        return pt_model_path
+
+    logging.info(f"[TRT] Engine ready: {engine_path}")
+    return engine_path
 
 # MQTT Client
 mqtt_client = None
@@ -1029,9 +1062,26 @@ def main():
         logging.error(f"Fatal error: {e}")
         return
     
-    model = YOLO(YOLO_MODEL)
     resolved_device = resolve_yolo_device(YOLO_DEVICE)
+
+    if resolved_device != 'cpu' and YOLO_MODEL.endswith('.pt'):
+        model_path = get_or_create_trt_engine(YOLO_MODEL, imgsz=YOLO_IMGSZ, device=resolved_device)
+    else:
+        model_path = YOLO_MODEL
+
+    try:
+        model = YOLO(model_path)
+    except Exception as e:
+        if model_path.endswith('.engine'):
+            logging.error(f"[TRT] Failed to load engine: {e}. Deleting and retrying with .pt")
+            os.remove(model_path)
+            model = YOLO(YOLO_MODEL)
+            model_path = YOLO_MODEL
+        else:
+            raise
+
     names = model.names
+    logging.info(f"Model loaded: {model_path}")
 
     last_waiting_log = time.time()
     
@@ -1087,7 +1137,11 @@ def main():
                     detection_frame = frame[DETECTION_Y_MIN:DETECTION_Y_MAX, :]
                 
                 # Run YOLO only on the detection region with confidence threshold
-                results = model.track(detection_frame, persist=True, verbose=False, conf=YOLO_CONFIDENCE, device=resolved_device, classes=[0], iou=0.45, tracker="bytetrack.yaml")
+                results = model.track(
+                    detection_frame, persist=True, verbose=False,
+                    conf=YOLO_CONFIDENCE, device=resolved_device,
+                    classes=[0], iou=0.3, imgsz=YOLO_IMGSZ, half=True,
+                    tracker="bytetrack.yaml")
 
                 # Draw detection overlays (only in DEBUG_MODE)
                 if DEBUG_MODE:
