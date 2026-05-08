@@ -708,11 +708,11 @@ def should_reset():
 def db_query(sql, params=(), commit=False, max_retry=3):
     """Execute database query with retry logic"""
     global pg_conn, cursor
-
+    
     if DEBUG_MODE:
         logging.info(f"DEBUG_MODE: Skipping DB query: {sql}")
         return True
-
+    
     retry = 0
     while retry < max_retry:
         try:
@@ -725,7 +725,7 @@ def db_query(sql, params=(), commit=False, max_retry=3):
             try:
                 cursor.close()
                 pg_conn.close()
-            except:
+            except: 
                 pass
             pg_conn, cursor = db_get_cursor()
             if not cursor:
@@ -766,7 +766,7 @@ def db_fetch(sql, params=(), commit=False, max_retry=3):
             try:
                 cursor.close()
                 pg_conn.close()
-            except:
+            except: 
                 pass
             pg_conn, cursor = db_get_cursor()
             if not cursor:
@@ -783,7 +783,7 @@ def db_fetch(sql, params=(), commit=False, max_retry=3):
             time.sleep(2)
             retry += 1
             continue
-        
+
     logging.error("DB fetch failed after max retries.")
     return None
 
@@ -996,7 +996,7 @@ def RGB(event, x, y, flags, param):
 
 def main():
     """Main function"""
-    global person_in, person_out, is_midnight, record_id, latest_person_coordinates, interval_person_in, interval_person_out, db_thread_running, resample_hour_in, resample_hour_out, _last_bbox_write
+    global person_in, person_out, is_midnight, record_id, latest_person_coordinates, interval_person_in, interval_person_out, db_thread_running, resample_hour_in, resample_hour_out
 
     # Start async database worker thread
     if not DEBUG_MODE:
@@ -1400,24 +1400,6 @@ def main():
                                         )
 
                                     zone_inside_prev[zone_key] = inside
-
-                # Write bounding box data for dashboard stream overlay (max 10Hz)
-                global _last_bbox_write
-                _now_ts = time.time()
-                if _now_ts - _last_bbox_write >= 0.1:
-                    try:
-                        bbox_path = f'/app/bbox_{device_code}.json'
-                        tmp_path = bbox_path + '.tmp'
-                        with open(tmp_path, 'w') as _f:
-                            json.dump({
-                                'ts': _now_ts,
-                                'resolution': resolution,
-                                'boxes': latest_person_coordinates,
-                            }, _f)
-                        os.replace(tmp_path, bbox_path)
-                        _last_bbox_write = _now_ts
-                    except Exception as _e:
-                        logging.debug(f'bbox write failed: {_e}')
 
                 # Check for interval MQTT sending
                 if should_send_interval_mqtt():

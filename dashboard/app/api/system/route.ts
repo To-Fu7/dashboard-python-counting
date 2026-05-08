@@ -52,43 +52,68 @@ interface GpuInfo {
   memTotal: number;
 }
 
-function getGpuStats(): Promise<GpuInfo[] | null> {
-  return new Promise(resolve => {
-    const proc = spawn('nvidia-smi', [
-      '--query-gpu=name,utilization.gpu,memory.used,memory.total',
-      '--format=csv,noheader,nounits',
-    ]);
+function runNvidiaSmi(): Promise<GpuInfo[] | null> {
+  // Try common paths; spawn resolves via PATH if not absolute
+  const candidates = ['/usr/bin/nvidia-smi', 'nvidia-smi'];
 
-    let stdout = '';
-    let timedOut = false;
-
-    const timer = setTimeout(() => {
-      timedOut = true;
-      proc.kill();
-      resolve(null);
-    }, 3000);
-
-    proc.stdout?.on('data', (d: Buffer) => { stdout += d.toString(); });
-    proc.on('close', (code) => {
-      clearTimeout(timer);
-      if (timedOut || code !== 0) { resolve(null); return; }
+  function tryBin(bin: string): Promise<GpuInfo[] | null> {
+    return new Promise(resolve => {
+      let proc;
       try {
-        const gpus = stdout.trim().split('\n').map(line => {
-          const parts = line.split(', ').map(s => s.trim());
-          return {
-            name: parts[0],
-            utilization: parseInt(parts[1]) || 0,
-            memUsed: parseInt(parts[2]) || 0,
-            memTotal: parseInt(parts[3]) || 0,
-          };
-        }).filter(g => g.memTotal > 0);
-        resolve(gpus.length > 0 ? gpus : null);
+        proc = spawn(bin, [
+          '--query-gpu=name,utilization.gpu,memory.used,memory.total',
+          '--format=csv,noheader,nounits',
+        ]);
       } catch {
         resolve(null);
+        return;
       }
+
+      let stdout = '';
+      let stderr = '';
+      let timedOut = false;
+
+      const timer = setTimeout(() => {
+        timedOut = true;
+        proc.kill();
+        resolve(null);
+      }, 4000);
+
+      proc.stdout?.on('data', (d: Buffer) => { stdout += d.toString(); });
+      proc.stderr?.on('data', (d: Buffer) => { stderr += d.toString(); });
+
+      proc.on('close', (code) => {
+        clearTimeout(timer);
+        if (timedOut || code !== 0) {
+          if (stderr) console.error(`[system/gpu] nvidia-smi stderr: ${stderr.trim()}`);
+          resolve(null);
+          return;
+        }
+        try {
+          const gpus = stdout.trim().split('\n').map(line => {
+            const parts = line.split(', ').map(s => s.trim());
+            return {
+              name: parts[0],
+              utilization: parseInt(parts[1]) || 0,
+              memUsed: parseInt(parts[2]) || 0,
+              memTotal: parseInt(parts[3]) || 0,
+            };
+          }).filter(g => g.memTotal > 0);
+          resolve(gpus.length > 0 ? gpus : null);
+        } catch {
+          resolve(null);
+        }
+      });
+
+      proc.on('error', () => { clearTimeout(timer); resolve(null); });
     });
-    proc.on('error', () => { clearTimeout(timer); resolve(null); });
-  });
+  }
+
+  return tryBin(candidates[0]).then(r => r ?? tryBin(candidates[1]));
+}
+
+function getGpuStats(): Promise<GpuInfo[] | null> {
+  return runNvidiaSmi();
 }
 
 export async function GET() {

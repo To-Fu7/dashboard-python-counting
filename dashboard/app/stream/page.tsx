@@ -112,34 +112,7 @@ function drawLineOverlay(
   });
 }
 
-interface BboxEntry {
-  track_id: number;
-  x: number; y: number; w: number; h: number;
-  confidence: number;
-}
-
-function drawBboxOverlay(ctx: CanvasRenderingContext2D, boxes: BboxEntry[]) {
-  boxes.forEach(b => {
-    ctx.save();
-    ctx.strokeStyle = '#00ff41';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(b.x, b.y, b.w, b.h);
-    ctx.fillStyle = 'rgba(0,255,65,0.15)';
-    ctx.fillRect(b.x, b.y, b.w, b.h);
-    ctx.fillStyle = '#00ff41';
-    ctx.font = 'bold 11px monospace';
-    ctx.textBaseline = 'bottom';
-    const label = `#${b.track_id}`;
-    const tw = ctx.measureText(label).width;
-    ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    ctx.fillRect(b.x, b.y - 14, tw + 6, 14);
-    ctx.fillStyle = '#00ff41';
-    ctx.fillText(label, b.x + 3, b.y);
-    ctx.restore();
-  });
-}
-
-function StreamCell({ device, showBbox }: { device: Device; showBbox: boolean }) {
+function StreamCell({ device }: { device: Device }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [connecting, setConnecting] = useState(true);
   const [streamError, setStreamError] = useState(false);
@@ -156,29 +129,6 @@ function StreamCell({ device, showBbox }: { device: Device; showBbox: boolean })
   useEffect(() => {
     overlayRef.current = { lines, zones, offsetAxis, offsetAmount, detectionMode };
   }, [lines, zones, offsetAxis, offsetAmount, detectionMode]);
-
-  // bbox polling — stored in a ref to avoid re-triggering the SSE effect
-  const bboxRef = useRef<BboxEntry[]>([]);
-  const showBboxRef = useRef(showBbox);
-  useEffect(() => { showBboxRef.current = showBbox; }, [showBbox]);
-
-  useEffect(() => {
-    if (device.status !== 'running') return;
-    let active = true;
-    async function poll() {
-      if (!active) return;
-      try {
-        const r = await fetch(`/api/devices/${device.deviceCode}/bbox`);
-        const d = await r.json();
-        bboxRef.current = d.stale ? [] : (d.boxes ?? []);
-      } catch { bboxRef.current = []; }
-      if (active) setTimeout(poll, 200);
-    }
-    poll();
-    return () => { active = false; bboxRef.current = []; };
-  // Only restart when device code or status changes
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [device.deviceCode, device.status]);
 
   useEffect(() => {
     if (device.status !== 'running') return;
@@ -203,9 +153,6 @@ function StreamCell({ device, showBbox }: { device: Device; showBbox: boolean })
         const { lines: l, zones: z, offsetAxis: oa, offsetAmount: oamt, detectionMode: dm } = overlayRef.current;
         if (dm === 'line_crossing' && l.length > 0) drawLineOverlay(ctx, l, oa, oamt);
         else if (dm === 'zone' && z.length > 0) drawZoneOverlay(ctx, z);
-        if (showBboxRef.current && bboxRef.current.length > 0) {
-          drawBboxOverlay(ctx, bboxRef.current);
-        }
         drawPending = false;
       };
       img.src = `data:image/jpeg;base64,${event.data}`;
@@ -268,7 +215,6 @@ export default function StreamPage() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
   const [layout, setLayout] = useState<GridLayout>('auto');
-  const [showBbox, setShowBbox] = useState(true);
 
   const fetchDevices = useCallback(async () => {
     try {
@@ -330,14 +276,6 @@ export default function StreamPage() {
               <SelectItem value="3x3">3×3</SelectItem>
             </SelectContent>
           </Select>
-          <Button
-            variant={showBbox ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setShowBbox(v => !v)}
-            title="Toggle bounding boxes"
-          >
-            BBox
-          </Button>
           <Button variant="outline" size="sm" onClick={fetchDevices} disabled={loading}>
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </Button>
@@ -351,7 +289,7 @@ export default function StreamPage() {
       ) : (
         <div className={`grid gap-2 flex-1 ${gridClass[layout]}`}>
           {devices.map(device => (
-            <StreamCell key={device.deviceCode} device={device} showBbox={showBbox} />
+            <StreamCell key={device.deviceCode} device={device} />
           ))}
         </div>
       )}
