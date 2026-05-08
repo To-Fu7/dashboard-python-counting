@@ -12,3 +12,6 @@ psycopg2-binary
 datetime
 python-dotenv
 paho-mqtt
+onnx>=1.12.0,<2.0.0
+onnxslim>=0.1.71
+onnxruntime-gpu
