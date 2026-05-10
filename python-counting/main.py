@@ -93,6 +93,10 @@ resolution = ast.literal_eval(os.getenv("SCREEN_RESOLUTION"))
 
 # Hardware video decoding (NVDEC) - set to 'true' to enable CUDA hardware decoding
 ENABLE_NVDEC = os.getenv('ENABLE_NVDEC', 'false').lower() == 'true'
+# NVDEC backend: 'cuvid' for x86 desktop GPU (default), 'gstreamer' for Jetson Tegra
+NVDEC_BACKEND = os.getenv('NVDEC_BACKEND', 'cuvid').lower()
+# ONNX export: set to 'false' on Jetson to run .pt model directly on CUDA
+USE_ONNX = os.getenv('USE_ONNX', 'true').lower() == 'true'
 
 # Line coordinates (support multiple gates)
 POINT_AXIS = os.getenv('POINT_AXIS', 'X')
@@ -633,14 +637,33 @@ def safe_destroy_windows():
     except cv2.error:
         pass
 
+def _build_gstreamer_nvdec_pipeline(source):
+    """Build GStreamer pipeline using nvv4l2decoder for Jetson Tegra NVDEC."""
+    if source.startswith('rtsp://'):
+        return (
+            f"rtspsrc location={source} latency=200 protocols=tcp ! "
+            "rtph264depay ! h264parse ! nvv4l2decoder ! "
+            "nvvidconv ! video/x-raw,format=BGRx ! videoconvert ! "
+            "video/x-raw,format=BGR ! appsink drop=1 max-buffers=1 sync=false"
+        )
+    # File source: hardware decode not needed, return as-is for regular cap
+    return None
+
+
 def initialize_video_capture(video_source):
     """Initialize video capture with the given video source (RTSP URL or file path)"""
     logging.info(f'Initializing video capture with source: {video_source}')
 
-    # Enable NVIDIA hardware video decoding (NVDEC) if configured
-    if ENABLE_NVDEC:
-        # Set FFmpeg options for CUDA hardware decoding
-        # This offloads H.264/HEVC decoding from CPU to GPU
+    if ENABLE_NVDEC and NVDEC_BACKEND == 'gstreamer':
+        # Jetson Tegra: use GStreamer + nvv4l2decoder (h264_cuvid not available on ARM)
+        pipeline = _build_gstreamer_nvdec_pipeline(video_source)
+        if pipeline:
+            logging.info('NVDEC hardware decoding enabled via GStreamer nvv4l2decoder (Jetson)')
+            cap = cv2.VideoCapture(pipeline, cv2.CAP_GSTREAMER)
+            return cap
+        # Fall through to regular cap for non-RTSP sources (e.g. file fallback)
+    elif ENABLE_NVDEC:
+        # x86 desktop GPU: use FFmpeg + h264_cuvid
         os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = 'hwaccel;cuda|video_codec;h264_cuvid|rtsp_transport;tcp'
         logging.info('NVDEC hardware decoding enabled (h264_cuvid)')
 
@@ -1063,7 +1086,7 @@ def main():
     
     resolved_device = resolve_yolo_device(YOLO_DEVICE)
 
-    if resolved_device != 'cpu' and YOLO_MODEL.endswith('.pt'):
+    if USE_ONNX and resolved_device != 'cpu' and YOLO_MODEL.endswith('.pt'):
         model_path = get_or_create_onnx(YOLO_MODEL, imgsz=YOLO_IMGSZ)
     else:
         model_path = YOLO_MODEL

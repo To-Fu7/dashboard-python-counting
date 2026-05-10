@@ -1,0 +1,27 @@
+services:
+  services-python-1:
+    image: python-counting-jetson:latest
+    container_name: services-python-b1
+    restart: unless-stopped
+    env_file:
+      - .env_b1
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    networks:
+      - envisions
+    shm_size: 1gb
+    runtime: nvidia
+    volumes:
+      - /path/to/python-counting:/app
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all,video
+      # Jetson-specific overrides
+      - NVDEC_BACKEND=gstreamer
+      - USE_ONNX=false
+      - ENABLE_NVDEC=true
+      - YOLO_DEVICE=0
+
+networks:
+  envisions:
+    driver: bridge

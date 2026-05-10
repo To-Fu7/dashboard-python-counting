@@ -1,0 +1,16 @@
+# torch and torchvision are pre-installed in the l4t-pytorch base image — do NOT reinstall
+ultralytics>=8.2.0
+numpy>=1.26.0
+lapx>=0.5.10.post1
+cvzone>=1.6.0
+pandas>=2.2.0
+shapely>=2.0.0
+psycopg2-binary
+python-dotenv
+paho-mqtt
+onnx>=1.12.0,<2.0.0
+onnxslim>=0.1.71
+# onnxruntime-gpu is NOT available on PyPI for ARM64 Jetson.
+# Use CPU onnxruntime, or set USE_ONNX=false to skip ONNX export entirely
+# and run .pt model directly on CUDA (recommended for Jetson).
+onnxruntime
