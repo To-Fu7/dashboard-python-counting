@@ -1,9 +1,11 @@
 # torch and torchvision are pre-installed in the l4t-pytorch base image — do NOT reinstall
 ultralytics>=8.2.0
-numpy>=1.26.0
+# numpy<1.26.0 required for Python 3.8 (dustynv/l4t-pytorch:r35.4.1 base)
+numpy>=1.23.0,<1.26.0
 lapx>=0.5.10.post1
 cvzone>=1.6.0
-pandas>=2.2.0
+# pandas<2.2.0 required for Python 3.8
+pandas>=2.0.0,<2.2.0
 shapely>=2.0.0
 psycopg2-binary
 python-dotenv
