@@ -1,10 +1,12 @@
-FROM nvcr.io/nvidia/l4t-pytorch:r35.4.1-pth2.1-py3
+# dustynv/l4t-pytorch is publicly available on Docker Hub (no NGC login needed).
+# r35.4.1 matches JetPack 5.1.x (L4T r35.x) with CUDA 11.4 on ARM64/aarch64.
+FROM dustynv/l4t-pytorch:r35.4.1-py3
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# torch + torchvision already bundled in l4t-pytorch base image (CUDA 11.4, ARM64)
+# torch + torchvision already bundled in base image (CUDA 11.4, ARM64)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         python3-pip \
