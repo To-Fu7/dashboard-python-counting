@@ -33,9 +33,10 @@ WORKDIR /app
 COPY requirements.txt .
 
 RUN pip3 install -r requirements.txt && \
-    # Remove pip-installed opencv (pulled in by cvzone) — it conflicts with
-    # the Jetson-native OpenCV already compiled with GStreamer/CUDA in the base image.
-    pip3 uninstall -y opencv-python opencv-python-headless opencv-contrib-python 2>/dev/null || true
+    # Replace any GUI opencv (from cvzone dep) with headless to avoid the
+    # gapi/GStreamer circular import crash on Jetson system OpenCV builds.
+    pip3 uninstall -y opencv-python opencv-contrib-python 2>/dev/null || true && \
+    pip3 install "opencv-python-headless>=4.8.0,<4.10.0"
 
 COPY main.py yolo11n.pt ./
 

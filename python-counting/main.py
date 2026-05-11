@@ -1,6 +1,17 @@
 
 import os
 import cv2
+
+# Headless environments (Jetson production) may lack GUI functions.
+# ultralytics assigns cv2.imshow at module import time, so stub them out
+# before importing ultralytics to prevent AttributeError on headless cv2.
+if not hasattr(cv2, 'imshow'):
+    cv2.imshow = lambda *a, **k: None
+    cv2.waitKey = lambda ms=0: -1
+    cv2.destroyAllWindows = lambda: None
+    cv2.namedWindow = lambda *a, **k: None
+    cv2.setMouseCallback = lambda *a, **k: None
+
 import json
 import datetime
 import uuid
