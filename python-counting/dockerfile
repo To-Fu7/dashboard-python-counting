@@ -1,6 +1,6 @@
 # dustynv/l4t-pytorch is publicly available on Docker Hub (no NGC login needed).
 # r35.4.1 matches JetPack 5.1.x (L4T r35.x) with CUDA 11.4 on ARM64/aarch64.
-FROM dustynv/l4t-pytorch:r35.4.1-py3
+FROM dustynv/l4t-pytorch:r35.4.1
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \
