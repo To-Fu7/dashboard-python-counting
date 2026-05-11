@@ -8,17 +8,9 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
-    runtime: nvidia
     volumes:
       - ../python-counting:/python-counting
       - /var/run/docker.sock:/var/run/docker.sock
       - dashboard-data:/app/data
-      - /usr/bin/nvidia-smi:/usr/bin/nvidia-smi:ro
-    environment:
-      - PYTHON_COUNTING_DIR=/python-counting
-      - HOST_PYTHON_COUNTING_DIR=${HOST_PYTHON_COUNTING_DIR}
-      - SETTINGS_FILE=/app/data/settings.json
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=utility
 volumes:
   dashboard-data:

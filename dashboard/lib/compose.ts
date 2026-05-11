@@ -111,6 +111,8 @@ function buildServiceDefinition(deviceCode: string, hardwareMode: HardwareMode):
         'NVIDIA_VISIBLE_DEVICES=all',
         'NVIDIA_DRIVER_CAPABILITIES=all',
         'LD_LIBRARY_PATH=/usr/lib/aarch64-linux-gnu/tegra:/usr/lib/aarch64-linux-gnu/tegra-egl',
+        'NVDEC_BACKEND=gstreamer',
+        'USE_ONNX=false',
       ],
     };
   }
