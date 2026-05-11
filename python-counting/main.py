@@ -313,10 +313,6 @@ FRAME_SKIP = max(1, int(os.getenv('FRAME_SKIP', '2')))  # Process 1 out of every
 # DEBUG MODE
 DEBUG_MODE = os.getenv('DEBUG_MODE', 'true').lower() == 'true'
 
-def _is_jetson():
-    """Detect Jetson/Tegra platform by checking L4T release file."""
-    return os.path.exists('/etc/nv_tegra_release')
-
 def resolve_yolo_device(device_str):
     if device_str.lower() == 'auto':
         import torch
@@ -325,17 +321,17 @@ def resolve_yolo_device(device_str):
             logging.info(f"YOLO_DEVICE=auto: CUDA available, using GPU 0 ({torch.cuda.get_device_name(0)})")
             return resolved
 
-        # On Jetson/L4T, torch.cuda.is_available() may return False due to driver
-        # version mismatch reporting, but the GPU is actually usable. Try explicitly.
-        if _is_jetson():
-            logging.info("YOLO_DEVICE=auto: Jetson detected, probing CUDA directly...")
-            try:
-                torch.zeros(1).cuda()
-                resolved = '0'
-                logging.info("YOLO_DEVICE=auto: Jetson CUDA probe succeeded, using GPU 0")
-                return resolved
-            except Exception as e:
-                logging.warning(f"YOLO_DEVICE=auto: Jetson CUDA probe failed ({e}), falling back to CPU")
+        # torch.cuda.is_available() can return False on Jetson/L4T due to driver
+        # version mismatch in PyTorch's check, even when the GPU is fully usable.
+        # Probe directly to confirm before giving up.
+        logging.info("YOLO_DEVICE=auto: torch.cuda.is_available()=False, probing CUDA directly...")
+        try:
+            torch.zeros(1).cuda()
+            resolved = '0'
+            logging.info("YOLO_DEVICE=auto: Direct CUDA probe succeeded, using GPU 0")
+            return resolved
+        except Exception as e:
+            logging.warning(f"YOLO_DEVICE=auto: Direct CUDA probe failed ({e}), falling back to CPU")
 
         resolved = 'cpu'
         logging.info("YOLO_DEVICE=auto: No CUDA available, falling back to CPU")
