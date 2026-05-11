@@ -1189,7 +1189,7 @@ def main():
                 results = model.track(
                     detection_frame, persist=True, verbose=False,
                     conf=YOLO_CONFIDENCE, device=resolved_device,
-                    classes=[0], iou=0.3, imgsz=YOLO_IMGSZ, half=True,
+                    classes=[0], iou=0.3, imgsz=YOLO_IMGSZ, half=(resolved_device != 'cpu'),
                     tracker="bytetrack.yaml")
 
                 # Draw detection overlays (only in DEBUG_MODE)
