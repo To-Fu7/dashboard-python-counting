@@ -1,10 +1,10 @@
 services:
-  services-python-1:
+  services-python-gerbang-utama:
     image: python-counting-services-python-1:latest
-    container_name: services-python-b1
+    container_name: services-python-gerbang-utama
     restart: unless-stopped
     env_file:
-      - .env_b1
+      - .env_GERBANG_UTAMA
     extra_hosts:
       - host.docker.internal:host-gateway
     networks:
@@ -12,16 +12,19 @@ services:
     shm_size: 1gb
     runtime: nvidia
     volumes:
-      - /home/irengi/Documents/Python/epiwalk/v3-dashboard/python-counting:/app
+      - /opt/ai/dashboard-python-counting/python-counting:/app
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=all
-  services-python-t1:
+      - NVDEC_BACKEND=gstreamer
+      - USE_ONNX=false
+
+  services-python-cctv1:
     image: python-counting-services-python-1:latest
-    container_name: services-python-t1
+    container_name: services-python-cctv1
     restart: unless-stopped
     env_file:
-      - .env_T1
+      - .env_CCTV1
     extra_hosts:
       - host.docker.internal:host-gateway
     networks:
@@ -29,10 +32,73 @@ services:
     shm_size: 1gb
     runtime: nvidia
     volumes:
-      - /home/irengi/Documents/Python/epiwalk/v3-dashboard/python-counting:/app
+      - /opt/ai/dashboard-python-counting/python-counting:/app
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=all
+      - NVDEC_BACKEND=gstreamer
+      - USE_ONNX=false
+
+  services-python-cctv2:
+    image: python-counting-services-python-1:latest
+    container_name: services-python-cctv2
+    restart: unless-stopped
+    env_file:
+      - .env_CCTV2
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    networks:
+      - envisions
+    shm_size: 1gb
+    runtime: nvidia
+    volumes:
+      - /opt/ai/dashboard-python-counting/python-counting:/app
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - NVDEC_BACKEND=gstreamer
+      - USE_ONNX=false
+
+  services-python-cctv4:
+    image: python-counting-services-python-1:latest
+    container_name: services-python-cctv4
+    restart: unless-stopped
+    env_file:
+      - .env_CCTV4
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    networks:
+      - envisions
+    shm_size: 1gb
+    runtime: nvidia
+    volumes:
+      - /opt/ai/dashboard-python-counting/python-counting:/app
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - NVDEC_BACKEND=gstreamer
+      - USE_ONNX=false
+
+  services-python-cctv5:
+    image: python-counting-services-python-1:latest
+    container_name: services-python-cctv5
+    restart: unless-stopped
+    env_file:
+      - .env_CCTV5
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    networks:
+      - envisions
+    shm_size: 1gb
+    runtime: nvidia
+    volumes:
+      - /opt/ai/dashboard-python-counting/python-counting:/app
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - NVDEC_BACKEND=gstreamer
+      - USE_ONNX=false
+
 networks:
   envisions:
     driver: bridge
