@@ -1,15 +1,17 @@
-# dustynv/l4t-pytorch is publicly available on Docker Hub (no NGC login needed).
-# r35.4.1 matches JetPack 5.1.x (L4T r35.x) with CUDA 11.4 on ARM64/aarch64.
-FROM dustynv/l4t-pytorch:r35.4.1
+# Plain Ubuntu — no bundled CUDA runtime.
+# CUDA is provided by the host Tegra libs mounted at runtime via LD_LIBRARY_PATH
+# (see docker-compose volumes: /usr/lib/aarch64-linux-gnu/tegra).
+FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# torch + torchvision already bundled in base image (CUDA 11.4, ARM64)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
+        python3.10 \
         python3-pip \
+        python3.10-dev \
         libglib2.0-0 \
         libsm6 \
         libxext6 \
@@ -26,18 +28,27 @@ RUN apt-get update && \
         python3-gst-1.0 \
         curl && \
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/* && \
+    update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1 && \
+    ln -sf /usr/bin/pip3 /usr/bin/pip
+
+RUN pip install --upgrade pip setuptools wheel
+
+# PyTorch for JetPack 5.x (CUDA 11.4, ARM64) via dustynv's Jetson pip server
+RUN pip install \
+    --index-url https://pypi.jetson-ai-lab.dev/jp5/cu114 \
+    torch torchvision
 
 WORKDIR /app
 
 COPY requirements.txt .
 
-RUN pip3 install -r requirements.txt && \
-    # Nuke every opencv installation (system + pip) before putting in a clean one.
-    # Mixed versions cause 'partially initialized module cv2' circular import errors.
-    pip3 uninstall -y opencv-python opencv-python-headless opencv-contrib-python 2>/dev/null || true && \
-    rm -rf /usr/local/lib/python3.8/dist-packages/cv2 && \
-    pip3 install "opencv-python-headless==4.8.1.78"
+RUN pip install -r requirements.txt && \
+    # Remove any pip opencv pulled in by cvzone/ultralytics, then install a clean
+    # headless build to avoid the system cv2 circular import bug on Jetson.
+    pip uninstall -y opencv-python opencv-contrib-python 2>/dev/null || true && \
+    rm -rf /usr/local/lib/python3.10/dist-packages/cv2 2>/dev/null || true && \
+    pip install "opencv-python-headless==4.8.1.78"
 
 COPY main.py yolo11n.pt ./
 
