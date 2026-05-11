@@ -24,7 +24,10 @@ import psycopg2
 import time
 import logging
 from collections import defaultdict
-from zoneinfo import ZoneInfo
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    from backports.zoneinfo import ZoneInfo
 import asyncio
 import base64
 from dotenv import load_dotenv
