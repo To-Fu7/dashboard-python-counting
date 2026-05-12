@@ -323,9 +323,9 @@ def resolve_yolo_device(device_str):
     return device_str
 
 def get_or_create_onnx(pt_model_path, imgsz=640):
-    """Return path to ONNX model (cache hit or export from .pt)."""
+    """Return path to FP16 ONNX model (cache hit or export from .pt)."""
     base = os.path.splitext(pt_model_path)[0]
-    onnx_path = f"{base}_imgsz{imgsz}.onnx"
+    onnx_path = f"{base}_imgsz{imgsz}_fp16.onnx"
 
     if os.path.exists(onnx_path):
         logging.info(f"[ONNX] Cache hit: {onnx_path}")
@@ -335,7 +335,7 @@ def get_or_create_onnx(pt_model_path, imgsz=640):
     try:
         from ultralytics import YOLO as _YOLO
         _YOLO(pt_model_path).export(
-            format='onnx', imgsz=imgsz, half=False,
+            format='onnx', imgsz=imgsz, half=True,
             simplify=True, verbose=False, dynamic=True,
         )
     except Exception as e:

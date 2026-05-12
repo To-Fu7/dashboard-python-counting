@@ -1,45 +1,100 @@
-FROM nvidia/cuda:12.5.0-runtime-ubuntu22.04
+FROM nvidia/cuda:12.5.0-devel-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PATH=/usr/local/cuda/bin:$PATH \
+    LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 
 RUN sed -i 's|http://archive.ubuntu.com/ubuntu|http://mirrors.tuna.tsinghua.edu.cn/ubuntu|g' /etc/apt/sources.list && \
     sed -i 's|http://security.ubuntu.com/ubuntu|http://mirrors.tuna.tsinghua.edu.cn/ubuntu|g' /etc/apt/sources.list && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends \
-        python3.10 \
-        python3-pip \
-        python3-dev \
-        libglib2.0-0 \
-        libsm6 \
-        libxext6 \
-        libxrender-dev \
-        ffmpeg \
-        curl \
-        git && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* && \
+    apt-get update && apt-get install -y --no-install-recommends \
+        python3.10 python3-pip python3-dev python3-numpy \
+        build-essential cmake git pkg-config \
+        libavcodec-dev libavformat-dev libswscale-dev \
+        libglib2.0-0 libsm6 libxext6 libxrender-dev \
+        libtbb-dev libjpeg-dev libpng-dev libtiff-dev \
+        libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+        nasm yasm \
+        curl && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN ln -sf /usr/bin/python3.10 /usr/bin/python && \
     ln -sf /usr/bin/pip3 /usr/bin/pip
 
-RUN ln -sf /usr/bin/python3.10 /usr/bin/python
+# nv-codec-headers
+RUN git clone https://git.videolan.org/git/ffmpeg/nv-codec-headers.git && \
+    cd nv-codec-headers && make && make install && cd .. && rm -rf nv-codec-headers
+
+# FFmpeg dengan NVDEC
+RUN curl -L https://ffmpeg.org/releases/ffmpeg-7.1.tar.gz | tar xz && \
+    mv ffmpeg-7.1 ffmpeg && \
+    cd ffmpeg && \
+    ./configure \
+        --enable-nonfree --enable-cuda-nvcc \
+        --enable-nvdec --enable-nvenc --enable-cuvid \
+        --enable-shared --disable-static \
+        --extra-cflags=-I/usr/local/cuda/include \
+        --extra-ldflags=-L/usr/local/cuda/lib64 \
+        --extra-libs="-lpthread -lm" && \
+    make -j$(nproc) && make install && ldconfig && \
+    cd .. && rm -rf ffmpeg
+
+# OpenCV dari source
+RUN curl -L https://github.com/opencv/opencv/archive/refs/tags/4.10.0.tar.gz | tar xz && \
+    curl -L https://github.com/opencv/opencv_contrib/archive/refs/tags/4.10.0.tar.gz | tar xz && \
+    mv opencv-4.10.0 opencv && \
+    mv opencv_contrib-4.10.0 opencv_contrib && \
+    cd opencv && mkdir build && cd build && \
+    cmake .. \
+        -D CMAKE_BUILD_TYPE=Release \
+        -D CMAKE_INSTALL_PREFIX=/usr/local \
+        -D OPENCV_EXTRA_MODULES_PATH=../../opencv_contrib/modules \
+        -D WITH_CUDA=ON \
+        -D WITH_NVCUVID=ON \
+        -D WITH_FFMPEG=ON \
+        -D BUILD_opencv_python3=ON \
+        -D PYTHON3_EXECUTABLE=/usr/bin/python3.10 \
+        -D CUDA_ARCH_BIN="8.9" \
+        -D BUILD_TESTS=OFF \
+        -D BUILD_EXAMPLES=OFF && \
+    make -j$(nproc) && make install && ldconfig && \
+    cd ../.. && rm -rf opencv opencv_contrib
+
+# Tulis __init__.py setelah build OpenCV — sebelum pip install apapun yang bisa nimpa
+RUN printf 'import sys, os, importlib.util\n\
+_dir = os.path.join(os.path.dirname(__file__), "python-3.10")\n\
+sys.path.insert(0, _dir)\n\
+_spec = importlib.util.spec_from_file_location("cv2", os.path.join(_dir, "cv2.cpython-310-x86_64-linux-gnu.so"))\n\
+_mod = importlib.util.module_from_spec(_spec)\n\
+_spec.loader.exec_module(_mod)\n\
+sys.modules["cv2"] = _mod\n\
+from cv2 import *\n' > /usr/local/lib/python3.10/dist-packages/cv2/__init__.py
 
 RUN pip install --upgrade pip setuptools wheel
 
+RUN pip install "numpy<2"
+
 RUN pip install \
-    torch \
-    torchvision \
+    torch torchvision \
     --index-url https://download.pytorch.org/whl/cu130
 
 WORKDIR /app
-
 COPY requirements.txt .
 
-RUN pip install -r requirements.txt
+RUN pip install -r requirements.txt && \
+    pip uninstall opencv-python opencv-python-headless -y || true && \
+    pip install "numpy<2" --force-reinstall && \
+    printf 'import sys, os, importlib.util\n\
+_dir = os.path.join(os.path.dirname(__file__), "python-3.10")\n\
+sys.path.insert(0, _dir)\n\
+_spec = importlib.util.spec_from_file_location("cv2", os.path.join(_dir, "cv2.cpython-310-x86_64-linux-gnu.so"))\n\
+_mod = importlib.util.module_from_spec(_spec)\n\
+_spec.loader.exec_module(_mod)\n\
+sys.modules["cv2"] = _mod\n\
+from cv2 import *\n' > /usr/local/lib/python3.10/dist-packages/cv2/__init__.py
 
-COPY main.py yolo11m.pt ./
+COPY main.py *.pt ./
 
 EXPOSE 8080
-
 CMD ["python", "main.py"]
 
