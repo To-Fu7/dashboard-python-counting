@@ -17,7 +17,7 @@ interface Device {
   env?: Record<string, string>;
 }
 
-type GridLayout = '1' | '2x2' | '3x3' | 'auto';
+type GridLayout = '1' | '2x2' | '3x3' | '4x4' | '6x6' | '8x8' | 'auto';
 
 function parseLinesFromEnv(env: Record<string, string>): Array<{ p1: [number, number]; p2: [number, number] }> {
   const lines: Array<{ p1: [number, number]; p2: [number, number] }> = [];
@@ -246,12 +246,18 @@ export default function StreamPage() {
   }, [fetchDevices]);
 
   const gridClass: Record<GridLayout, string> = {
-    '1': 'grid-cols-1 max-w-3xl mx-auto',
+    '1':   'grid-cols-1 max-w-3xl mx-auto',
     '2x2': 'grid-cols-2',
     '3x3': 'grid-cols-3',
-    'auto': devices.length === 1 ? 'grid-cols-1 max-w-3xl mx-auto'
-          : devices.length <= 4 ? 'grid-cols-2'
-          : 'grid-cols-3',
+    '4x4': 'grid-cols-4',
+    '6x6': 'grid-cols-6',
+    '8x8': 'grid-cols-8',
+    'auto': devices.length === 1  ? 'grid-cols-1 max-w-3xl mx-auto'
+          : devices.length <= 4   ? 'grid-cols-2'
+          : devices.length <= 9   ? 'grid-cols-3'
+          : devices.length <= 16  ? 'grid-cols-4'
+          : devices.length <= 36  ? 'grid-cols-6'
+          : 'grid-cols-8',
   };
 
   return (
@@ -274,6 +280,9 @@ export default function StreamPage() {
               <SelectItem value="1">1×1</SelectItem>
               <SelectItem value="2x2">2×2</SelectItem>
               <SelectItem value="3x3">3×3</SelectItem>
+              <SelectItem value="4x4">4×4</SelectItem>
+              <SelectItem value="6x6">6×6</SelectItem>
+              <SelectItem value="8x8">8×8</SelectItem>
             </SelectContent>
           </Select>
           <Button variant="outline" size="sm" onClick={fetchDevices} disabled={loading}>
