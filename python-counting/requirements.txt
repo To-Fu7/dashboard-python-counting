@@ -2,7 +2,7 @@
 # backports.zoneinfo: required on Python 3.8 (JetPack 5.x / Ubuntu 20.04); no-op on 3.9+
 backports.zoneinfo; python_version < "3.9"
 ultralytics>=8.2.0
-numpy>=1.26.0
+numpy>=1.23.0,<1.25.0
 lapx>=0.5.10.post1
 cvzone>=1.6.0
 pandas>=2.2.0
