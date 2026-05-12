@@ -322,36 +322,37 @@ def resolve_yolo_device(device_str):
     logging.info(f"YOLO_DEVICE set to: {device_str}")
     return device_str
 
-def get_or_create_onnx(pt_model_path, imgsz=640):
-    """Return path to FP16 ONNX model (cache hit or export from .pt)."""
+def get_or_create_trt_engine(pt_model_path, imgsz=640, device='0'):
+    """Return path to TRT engine (cache hit or export from .pt)."""
     base = os.path.splitext(pt_model_path)[0]
-    onnx_path = f"{base}_imgsz{imgsz}_fp16.onnx"
+    engine_path = f"{base}_imgsz{imgsz}_fp16_dynamic.engine"
 
-    if os.path.exists(onnx_path):
-        logging.info(f"[ONNX] Cache hit: {onnx_path}")
-        return onnx_path
+    if os.path.exists(engine_path):
+        logging.info(f"[TRT] Engine cache hit: {engine_path}")
+        return engine_path
 
-    logging.info(f"[ONNX] Exporting {pt_model_path} → {onnx_path} (one-time, ~30s)...")
+    logging.info(f"[TRT] Exporting {pt_model_path} → {engine_path} (one-time, 30–120s)...")
     try:
         from ultralytics import YOLO as _YOLO
         _YOLO(pt_model_path).export(
-            format='onnx', imgsz=imgsz, half=True,
-            simplify=True, verbose=False, dynamic=True,
+            format='engine', imgsz=imgsz, half=True,
+            device=device, simplify=True, verbose=False,
+            dynamic=True,
         )
     except Exception as e:
-        logging.error(f"[ONNX] Export failed: {e}. Falling back to .pt")
+        logging.error(f"[TRT] Export failed: {e}. Falling back to .pt")
         return pt_model_path
 
-    default_onnx = base + '.onnx'
-    if os.path.exists(default_onnx) and default_onnx != onnx_path:
-        os.rename(default_onnx, onnx_path)
+    default_engine = base + '.engine'
+    if os.path.exists(default_engine) and default_engine != engine_path:
+        os.rename(default_engine, engine_path)
 
-    if not os.path.exists(onnx_path):
-        logging.error("[ONNX] File not found after export. Falling back to .pt")
+    if not os.path.exists(engine_path):
+        logging.error("[TRT] Engine not found after export. Falling back to .pt")
         return pt_model_path
 
-    logging.info(f"[ONNX] Ready: {onnx_path}")
-    return onnx_path
+    logging.info(f"[TRT] Engine ready: {engine_path}")
+    return engine_path
 
 # MQTT Client
 mqtt_client = None
@@ -1064,15 +1065,15 @@ def main():
     resolved_device = resolve_yolo_device(YOLO_DEVICE)
 
     if resolved_device != 'cpu' and YOLO_MODEL.endswith('.pt'):
-        model_path = get_or_create_onnx(YOLO_MODEL, imgsz=YOLO_IMGSZ)
+        model_path = get_or_create_trt_engine(YOLO_MODEL, imgsz=YOLO_IMGSZ, device=resolved_device)
     else:
         model_path = YOLO_MODEL
 
     try:
         model = YOLO(model_path)
     except Exception as e:
-        if model_path.endswith('.onnx'):
-            logging.error(f"[ONNX] Failed to load: {e}. Deleting and retrying with .pt")
+        if model_path.endswith('.engine'):
+            logging.error(f"[TRT] Failed to load engine: {e}. Deleting and retrying with .pt")
             os.remove(model_path)
             model = YOLO(YOLO_MODEL)
             model_path = YOLO_MODEL

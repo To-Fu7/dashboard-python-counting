@@ -14,4 +14,4 @@ python-dotenv
 paho-mqtt
 onnx>=1.12.0,<2.0.0
 onnxslim>=0.1.71
-onnxruntime-gpu
+tensorrt-cu13>=7.0.0,!=10.2.0
