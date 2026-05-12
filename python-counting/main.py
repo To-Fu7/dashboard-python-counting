@@ -9,7 +9,10 @@ import psycopg2
 import time
 import logging
 from collections import defaultdict
-from zoneinfo import ZoneInfo
+try:
+    from zoneinfo import ZoneInfo          # Python 3.9+
+except ImportError:
+    from backports.zoneinfo import ZoneInfo  # Python 3.8 (JetPack 5.x / Ubuntu 20.04)
 import base64
 from dotenv import load_dotenv
 import paho.mqtt.client as mqtt

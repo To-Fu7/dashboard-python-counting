@@ -1,4 +1,6 @@
 # torch and torchvision are pre-installed in the l4t-pytorch base image — do NOT reinstall
+# backports.zoneinfo: required on Python 3.8 (JetPack 5.x / Ubuntu 20.04); no-op on 3.9+
+backports.zoneinfo; python_version < "3.9"
 ultralytics>=8.2.0
 numpy>=1.26.0
 lapx>=0.5.10.post1
