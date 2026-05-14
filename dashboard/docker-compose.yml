@@ -6,6 +6,8 @@ services:
     image: epiwalk-dashboard:latest
     container_name: epiwalk-dashboard
     restart: unless-stopped
+    mem_limit: 4g
+    memswap_limit: 4g
     ports:
       - "3000:3000"
     runtime: nvidia

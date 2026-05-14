@@ -1,6 +1,9 @@
 import { getContainerName } from '@/lib/compose';
+import { getDocker } from '@/lib/docker';
 
 export const dynamic = 'force-dynamic';
+
+const MAX_STREAM_MS = 30 * 60 * 1000; // 30 minutes max per SSE connection
 
 export async function GET(
   request: Request,
@@ -14,9 +17,11 @@ export async function GET(
 
   let logStream: (NodeJS.ReadableStream & { destroy?: () => void }) | null = null;
   let keepaliveTimer: ReturnType<typeof setInterval> | null = null;
+  let maxDurationTimer: ReturnType<typeof setTimeout> | null = null;
 
   function cleanup() {
     if (keepaliveTimer) { clearInterval(keepaliveTimer); keepaliveTimer = null; }
+    if (maxDurationTimer) { clearTimeout(maxDurationTimer); maxDurationTimer = null; }
     if (logStream) { logStream.destroy?.(); logStream = null; }
   }
 
@@ -29,10 +34,13 @@ export async function GET(
       }
 
       keepaliveTimer = setInterval(() => send(': ping\n\n'), 25000);
+      maxDurationTimer = setTimeout(() => {
+        cleanup();
+        try { controller.close(); } catch { /* already closed */ }
+      }, MAX_STREAM_MS);
 
       try {
-        const Dockerode = (await import('dockerode')).default;
-        const docker = new Dockerode({ socketPath: '/var/run/docker.sock' });
+        const docker = getDocker();
         const container = docker.getContainer(containerName);
 
         const stream = await container.logs({

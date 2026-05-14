@@ -22,8 +22,16 @@ export async function GET(
   const fpsLimit = parseFloat(env.FPS_LIMIT ?? '0');
   const streamFps = fpsLimit > 0 ? String(Math.min(fpsLimit, 30)) : '10';
 
+  // Hard ceiling: kill ffmpeg after 15 minutes regardless of abort signal reliability.
+  // The client's EventSource will reconnect automatically.
+  let maxDurationTimer: ReturnType<typeof setTimeout> | null = null;
+
   const stream = new ReadableStream({
     start(controller) {
+      maxDurationTimer = setTimeout(() => {
+        ffmpeg?.kill('SIGKILL');
+        try { controller.close(); } catch { /* already closed */ }
+      }, 15 * 60 * 1000);
       const args = [
         '-loglevel', 'error',
         ...(!isLocalDevice ? ['-rtsp_transport', 'tcp'] : []),
@@ -74,10 +82,19 @@ export async function GET(
         }
       });
 
-      ffmpeg.on('close', () => { try { controller.close(); } catch { /* already closed */ } });
-      ffmpeg.on('error', () => { try { controller.close(); } catch { /* already closed */ } });
+      ffmpeg.on('close', () => {
+        if (maxDurationTimer) { clearTimeout(maxDurationTimer); maxDurationTimer = null; }
+        try { controller.close(); } catch { /* already closed */ }
+      });
+      ffmpeg.on('error', () => {
+        if (maxDurationTimer) { clearTimeout(maxDurationTimer); maxDurationTimer = null; }
+        try { controller.close(); } catch { /* already closed */ }
+      });
     },
-    cancel() { ffmpeg?.kill('SIGKILL'); },
+    cancel() {
+      if (maxDurationTimer) { clearTimeout(maxDurationTimer); maxDurationTimer = null; }
+      ffmpeg?.kill('SIGKILL');
+    },
   });
 
   request.signal.addEventListener('abort', () => { ffmpeg?.kill('SIGKILL'); });
