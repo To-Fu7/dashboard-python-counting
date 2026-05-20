@@ -93,7 +93,6 @@ export async function POST(request: Request) {
       RTSP_URL: rtspUrl || '',
       DEBUG_MODE: settings.defaults.debug_mode,
       SCREEN_RESOLUTION: '[800, 600]',
-      DETECTION_MARGIN: settings.defaults.detection_margin,
       YOLO_MODEL: settings.defaults.yolo_model,
       YOLO_CONFIDENCE: settings.defaults.yolo_confidence,
       ENABLE_NVDEC: settings.defaults.enable_nvdec,

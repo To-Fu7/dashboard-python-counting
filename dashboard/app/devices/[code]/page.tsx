@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { StatusBadge } from '@/components/StatusBadge';
 import { LineDrawer } from '@/components/LineDrawer';
 import { ZoneDrawer, type DrawnZone } from '@/components/ZoneDrawer';
+import type { CropRect } from '@/lib/types';
 import { Play, Square, RotateCcw, ArrowLeft, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
@@ -39,6 +40,19 @@ function drawnZonesToEnv(zones: DrawnZone[]): Record<string, string> {
     result[`zone${zone.label}`] = `[${zone.points.map(p => `(${p.x}, ${p.y})`).join(', ')}]`;
   }
   return result;
+}
+
+function envToCropRect(env: Partial<DeviceEnvConfig>): CropRect | null {
+  const val = env.CROP_AREA;
+  if (!val) return null;
+  try {
+    const parsed = JSON.parse(val.replace(/\(/g, '[').replace(/\)/g, ']').replace(/'/g, '"'));
+    return { x1: parsed[0][0], y1: parsed[0][1], x2: parsed[1][0], y2: parsed[1][1] };
+  } catch { return null; }
+}
+
+function cropRectToEnv(c: CropRect): string {
+  return `[(${c.x1}, ${c.y1}), (${c.x2}, ${c.y2})]`;
 }
 
 function parseResolution(res: string | undefined): [number, number] {
@@ -98,6 +112,7 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
   const logScrollRef = useRef<HTMLDivElement>(null);
   const [lines, setLines] = useState<DrawnLine[]>([]);
   const [zones, setZones] = useState<DrawnZone[]>([]);
+  const [cropRect, setCropRect] = useState<CropRect | null>(null);
 
   const fetchDevice = useCallback(async () => {
     try {
@@ -108,6 +123,7 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
       setStatus(data.status);
       setLines(envLinesToDrawn(data.env));
       setZones(envZonesToDrawn(data.env));
+      setCropRect(envToCropRect(data.env));
     } catch {
       toast.error('Failed to load device');
     } finally {
@@ -175,9 +191,11 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
       for (const letter of 'ACEGIKMOQSUWY') clearLines[`line${letter}`] = undefined;
       for (const letter of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') clearZones[`zone${letter}`] = undefined;
 
+      const cropEnv = { CROP_AREA: cropRect ? cropRectToEnv(cropRect) : '' };
+
       const payload = mode === 'line_crossing'
-        ? { ...env, ...clearZones, ...clearLines, ...drawnLinesToEnv(lines) }
-        : { ...env, ...clearLines, ...clearZones, ...drawnZonesToEnv(zones) };
+        ? { ...env, ...cropEnv, ...clearZones, ...clearLines, ...drawnLinesToEnv(lines) }
+        : { ...env, ...cropEnv, ...clearLines, ...clearZones, ...drawnZonesToEnv(zones) };
 
       const res = await fetch(`/api/devices/${code}`, {
         method: 'PUT',
@@ -303,9 +321,6 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
                     <SelectItem value="[1920, 1080]">1920 × 1080</SelectItem>
                   </SelectContent>
                 </Select>
-              </FormField>
-              <FormField label="Detection Margin (px)">
-                <Input type="number" value={env.DETECTION_MARGIN || '30'} onChange={e => setField('DETECTION_MARGIN', e.target.value)} />
               </FormField>
               <FormField label="FPS Limit (0 = unlimited)">
                 <Input type="number" value={env.FPS_LIMIT || '0'} onChange={e => setField('FPS_LIMIT', e.target.value)} />
@@ -446,6 +461,8 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
                   offsetAxis={env.LINE_OFFSET || 'Y'}
                   offsetAmount={parseInt(env.LINE_OFFSET_AMOUNT || '5', 10)}
                   onChange={setLines}
+                  cropRect={cropRect}
+                  onCropChange={setCropRect}
                 />
               </Section>
             </>
@@ -456,6 +473,8 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
                 resolution={parseResolution(env.SCREEN_RESOLUTION)}
                 initialZones={zones}
                 onChange={setZones}
+                cropRect={cropRect}
+                onCropChange={setCropRect}
               />
             </Section>
           )}
@@ -533,48 +552,27 @@ function FormField({ label, hint, children }: { label: string; hint?: string; ch
 }
 
 function StreamPreview({ code }: { code: string }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [connecting, setConnecting] = useState(true);
+  const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    setConnecting(true);
-    setError(false);
-
-    const es = new EventSource(`/api/stream/${code}`);
-    let drawPending = false;
-
-    es.onmessage = (event) => {
-      if (drawPending) return;
-      drawPending = true;
-      setConnecting(false);
-      const img = new Image();
-      img.onload = () => {
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        drawPending = false;
-      };
-      img.src = `data:image/jpeg;base64,${event.data}`;
-    };
-
-    es.onerror = () => { setError(true); es.close(); };
-
-    return () => es.close();
-  }, [code]);
 
   return (
     <div className="relative bg-black rounded-lg overflow-hidden aspect-video max-h-52">
-      <canvas ref={canvasRef} width={800} height={600} className="w-full h-full" />
-      {connecting && !error && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/70">
-          <Loader2 className="w-5 h-5 text-white/40 animate-spin" />
-        </div>
-      )}
-      {error && (
+      {!error ? (
+        <>
+          <img
+            src={`/api/stream/${code}`}
+            className="w-full h-full object-contain"
+            onLoad={() => setLoaded(true)}
+            onError={() => setError(true)}
+            alt=""
+          />
+          {!loaded && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/70">
+              <Loader2 className="w-5 h-5 text-white/40 animate-spin" />
+            </div>
+          )}
+        </>
+      ) : (
         <div className="absolute inset-0 flex items-center justify-center bg-black/70">
           <p className="text-xs text-gray-400">Stream unavailable</p>
         </div>

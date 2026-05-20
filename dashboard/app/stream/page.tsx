@@ -114,7 +114,7 @@ function drawLineOverlay(
 
 function StreamCell({ device }: { device: Device }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [connecting, setConnecting] = useState(true);
+  const [streamLoaded, setStreamLoaded] = useState(false);
   const [streamError, setStreamError] = useState(false);
   const resolution = parseResolution(device.env?.SCREEN_RESOLUTION);
   const detectionMode = device.env?.DETECTION_MODE || 'line_crossing';
@@ -125,60 +125,63 @@ function StreamCell({ device }: { device: Device }) {
   const offsetAxis = device.env?.LINE_OFFSET ?? 'Y';
   const offsetAmount = parseInt(device.env?.LINE_OFFSET_AMOUNT ?? '5', 10);
 
-  const overlayRef = useRef({ lines, zones, offsetAxis, offsetAmount, detectionMode });
+  // Draw overlay ONCE on canvas — only when lines/zones change, not per frame.
   useEffect(() => {
-    overlayRef.current = { lines, zones, offsetAxis, offsetAmount, detectionMode };
-  }, [lines, zones, offsetAxis, offsetAmount, detectionMode]);
-
-  useEffect(() => {
-    if (device.status !== 'running') return;
-
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-
-    const es = new EventSource(`/api/stream/${device.deviceCode}`);
-    let drawPending = false;
-
-    es.onmessage = (event) => {
-      if (drawPending) return;
-      drawPending = true;
-
-      setConnecting(false);
-
-      const img = new Image();
-      img.onload = () => {
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        const { lines: l, zones: z, offsetAxis: oa, offsetAmount: oamt, detectionMode: dm } = overlayRef.current;
-        if (dm === 'line_crossing' && l.length > 0) drawLineOverlay(ctx, l, oa, oamt);
-        else if (dm === 'zone' && z.length > 0) drawZoneOverlay(ctx, z);
-        drawPending = false;
-      };
-      img.src = `data:image/jpeg;base64,${event.data}`;
-    };
-
-    es.onerror = () => {
-      setStreamError(true);
-      es.close();
-    };
-
-    return () => es.close();
-  // Only restart the stream if the device code or status changes
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (detectionMode === 'line_crossing' && lines.length > 0) {
+      drawLineOverlay(ctx, lines, offsetAxis, offsetAmount);
+    } else if (detectionMode === 'zone' && zones.length > 0) {
+      drawZoneOverlay(ctx, zones);
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [device.deviceCode, device.status]);
+  }, [lines.length, zones.length, detectionMode, offsetAxis, offsetAmount]);
+
+  if (device.status !== 'running') {
+    return (
+      <div className="relative bg-black rounded-lg overflow-hidden aspect-video group">
+        <div className="flex flex-col items-center justify-center h-full text-gray-500 gap-2">
+          <div className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center">
+            <span className="text-lg text-gray-600">&#9654;</span>
+          </div>
+          <p className="text-xs">Service not running</p>
+        </div>
+        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-3 py-2 translate-y-full group-hover:translate-y-0 transition-transform">
+          <div className="flex items-center justify-between">
+            <span className="text-white text-xs font-medium truncate">{device.deviceName}</span>
+            <StatusBadge status={device.status} />
+          </div>
+        </div>
+        <div className="absolute top-2 left-2">
+          <span className="text-xs font-mono text-white/70 bg-black/50 rounded px-1.5 py-0.5">{device.deviceCode}</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative bg-black rounded-lg overflow-hidden aspect-video group">
-      {device.status === 'running' && !streamError ? (
+      {!streamError ? (
         <>
+          {/* Native MJPEG stream — browser handles frame decoding, no JS per-frame overhead */}
+          <img
+            src={`/api/stream/${device.deviceCode}?fps=3&q=12`}
+            className="absolute inset-0 w-full h-full object-contain"
+            onLoad={() => setStreamLoaded(true)}
+            onError={() => setStreamError(true)}
+            alt=""
+          />
+          {/* Static canvas overlay for detection lines/zones — redrawn only when config changes */}
           <canvas
             ref={canvasRef}
             width={resolution[0]}
             height={resolution[1]}
-            className="w-full h-full"
+            className="absolute inset-0 w-full h-full pointer-events-none"
           />
-          {connecting && (
+          {!streamLoaded && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/70">
               <Loader2 className="w-6 h-6 text-white/50 animate-spin" />
             </div>
@@ -189,9 +192,7 @@ function StreamCell({ device }: { device: Device }) {
           <div className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center">
             <span className="text-lg text-gray-600">&#9654;</span>
           </div>
-          <p className="text-xs">
-            {device.status !== 'running' ? 'Service not running' : 'Stream unavailable'}
-          </p>
+          <p className="text-xs">Stream unavailable</p>
         </div>
       )}
 
