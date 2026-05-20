@@ -22,5 +22,13 @@ services:
       - SETTINGS_FILE=/app/data/settings.json
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=utility
+    networks:
+      - default
+      - envisions
 volumes:
   dashboard-data:
+networks:
+  default: {}
+  envisions:
+    external: true
+    name: ${COUNTING_NETWORK:-python-counting_envisions}
