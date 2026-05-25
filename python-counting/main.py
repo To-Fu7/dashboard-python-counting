@@ -303,11 +303,14 @@ FRAME_SKIP = max(1, int(os.getenv('FRAME_SKIP', '2')))  # Process 1 out of every
 DEBUG_MODE = os.getenv('DEBUG_MODE', 'true').lower() == 'true'
 
 # ANNOTATED STREAM — serve annotated MJPEG on this port (0 = disabled)
-STREAM_PORT = int(os.getenv('STREAM_PORT', '8090'))
+ANNOTATED_STREAM = os.getenv('ANNOTATED_STREAM', 'false').strip().lower() in ('true', '1', 'yes')
+STREAM_PORT = int(os.getenv('STREAM_PORT', '8090')) if ANNOTATED_STREAM else 0
 STREAM_JPEG_QUALITY = int(os.getenv('STREAM_JPEG_QUALITY', '50'))
 
 _stream_frame: bytes | None = None
 _stream_lock = threading.Lock()
+_stream_clients = 0  # active MJPEG viewer count
+_stream_clients_lock = threading.Lock()
 
 DRAW_OVERLAYS = DEBUG_MODE or (STREAM_PORT > 0)
 
@@ -322,6 +325,9 @@ class _MJPEGHandler(BaseHTTPRequestHandler):
         self.send_header('Cache-Control', 'no-cache')
         self.send_header('Connection', 'keep-alive')
         self.end_headers()
+        global _stream_clients
+        with _stream_clients_lock:
+            _stream_clients += 1
         try:
             while True:
                 with _stream_lock:
@@ -337,6 +343,9 @@ class _MJPEGHandler(BaseHTTPRequestHandler):
                 time.sleep(0.04)  # ~25 fps cap
         except (BrokenPipeError, ConnectionResetError, OSError):
             pass
+        finally:
+            with _stream_clients_lock:
+                _stream_clients -= 1
 
     def log_message(self, format, *args):  # suppress access logs
         pass
@@ -1069,7 +1078,7 @@ def RGB(event, x, y, flags, param):
 
 def main():
     """Main function"""
-    global person_in, person_out, is_midnight, record_id, latest_person_coordinates, interval_person_in, interval_person_out, db_thread_running, resample_hour_in, resample_hour_out, _stream_frame
+    global person_in, person_out, is_midnight, record_id, latest_person_coordinates, interval_person_in, interval_person_out, db_thread_running, resample_hour_in, resample_hour_out, _stream_frame, _stream_clients
 
     # Start async database worker thread
     if not DEBUG_MODE:
@@ -1179,8 +1188,9 @@ def main():
                     classes=[0], iou=0.3, imgsz=YOLO_IMGSZ, half=True,
                     tracker="bytetrack.yaml")
 
-                # Draw detection overlays
-                if DRAW_OVERLAYS:
+                # Draw detection overlays (only when DEBUG_MODE or someone is watching the stream)
+                draw_now = DEBUG_MODE or _stream_clients > 0
+                if draw_now:
                     if DETECTION_MODE == 'zone':
                         zone_colors_bgr = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (0, 255, 255), (255, 0, 255)]
                         for zi, zone in enumerate(ZONES):
@@ -1239,8 +1249,8 @@ def main():
                         cv2.putText(frame, 'Crop Area', (CROP_X1 + 4, CROP_Y1 + 18),
                                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
 
-                # Copy frame for annotations or zone MQTT (needs annotated copy)
-                if DRAW_OVERLAYS or DETECTION_MODE == 'zone':
+                # Copy frame for zone MQTT (needs clean copy before drawing)
+                if DETECTION_MODE == 'zone':
                     original_frame = frame.copy()
                 else:
                     original_frame = frame
@@ -1304,7 +1314,7 @@ def main():
                                         second_point = (x2 + DOT_OFFSET_AMOUNT, (y1 + y2) // 2)
 
                             # Draw person bounding box
-                            if DRAW_OVERLAYS:
+                            if draw_now:
                                 cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
                                 cvzone.putTextRect(frame, f'{track_id}', (x1, y1), 1, 1)
                                 if DETECTION_MODE == 'line_crossing':
@@ -1505,13 +1515,13 @@ def main():
                         last_waiting_log = current_time
 
                 # Display counters
-                if DRAW_OVERLAYS:
+                if draw_now:
                     cv2.putText(frame, f'IN: {person_in}', (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
                     cv2.putText(frame, f'OUT: {person_out}', (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
                     cv2.putText(frame, f'Region Detections: {region_detections}', (50, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
 
-                # Push annotated frame to MJPEG server
-                if STREAM_PORT > 0 and DRAW_OVERLAYS:
+                # Push annotated frame to MJPEG server (only when there are active viewers)
+                if STREAM_PORT > 0 and _stream_clients > 0:
                     ok, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, STREAM_JPEG_QUALITY])
                     if ok:
                         with _stream_lock:

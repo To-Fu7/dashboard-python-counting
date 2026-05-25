@@ -68,10 +68,12 @@ export async function GET(
   }
 
   const containerName = getContainerName(code);
+  const url = new URL(request.url);
+  const plain = url.searchParams.get('plain') === '1';
   const streamPort = parseInt(env.STREAM_PORT || '8090', 10);
 
-  // Try annotated stream from Python container first (zero frame mismatch)
-  if (streamPort > 0 && await isContainerRunning(containerName)) {
+  // Try annotated stream from Python container (unless plain=1 is requested)
+  if (!plain && streamPort > 0 && await isContainerRunning(containerName)) {
     const annotatedStream = await proxyAnnotatedStream(containerName, streamPort);
     if (annotatedStream) {
       return new Response(annotatedStream, {
@@ -85,7 +87,7 @@ export async function GET(
     }
   }
 
-  // Fallback: raw RTSP via ffmpeg (no bounding boxes)
+  // Raw RTSP via ffmpeg (no bounding boxes)
   const rtspUrl = env.RTSP_URL;
   const isLocalDevice = /^(\d+|\/dev\/)/.test(rtspUrl);
 

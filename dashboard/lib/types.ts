@@ -17,7 +17,8 @@ export interface DeviceEnvConfig {
   DEBUG_MODE: string;
   SCREEN_RESOLUTION: string;
   CROP_AREA?: string;         // '[(x1,y1),(x2,y2)]' top-left → bottom-right
-  STREAM_PORT?: string;       // annotated MJPEG port (default 8090, 0 = disabled)
+  ANNOTATED_STREAM?: string;  // 'true' = serve annotated MJPEG with bboxes on device detail page
+  STREAM_PORT?: string;       // annotated MJPEG port (default 8090)
   YOLO_MODEL: string;
   YOLO_CONFIDENCE: string;
   ENABLE_NVDEC: string;

@@ -181,7 +181,7 @@ function StreamCell({ device }: { device: Device }) {
         <>
           {/* Native MJPEG stream — browser handles frame decoding, no JS per-frame overhead */}
           <img
-            src={`/api/stream/${device.deviceCode}?fps=3&q=12`}
+            src={`/api/stream/${device.deviceCode}?fps=3&q=12&plain=1`}
             className="absolute inset-0 w-full h-full object-contain"
             onLoad={() => setStreamLoaded(true)}
             onError={() => setStreamError(true)}

@@ -351,6 +351,17 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
                   <span className="text-sm text-muted-foreground">{env.ENABLE_NVDEC === 'true' ? 'Enabled' : 'Disabled'}</span>
                 </div>
               </FormField>
+              <FormField label="Annotated Stream (Bounding Box)">
+                <div className="flex items-center gap-2 pt-2">
+                  <Switch
+                    checked={env.ANNOTATED_STREAM === 'true'}
+                    onCheckedChange={v => setField('ANNOTATED_STREAM', v ? 'true' : 'false')}
+                  />
+                  <span className="text-sm text-muted-foreground">
+                    {env.ANNOTATED_STREAM === 'true' ? 'Enabled — bounding boxes visible on device detail' : 'Disabled — plain stream only (lower CPU)'}
+                  </span>
+                </div>
+              </FormField>
             </div>
           </Section>
 

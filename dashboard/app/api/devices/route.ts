@@ -96,6 +96,7 @@ export async function POST(request: Request) {
       YOLO_MODEL: settings.defaults.yolo_model,
       YOLO_CONFIDENCE: settings.defaults.yolo_confidence,
       ENABLE_NVDEC: settings.defaults.enable_nvdec,
+      ANNOTATED_STREAM: 'false',
       JPEG_QUALITY: settings.defaults.jpeg_quality,
       FPS_LIMIT: settings.defaults.fps_limit,
       FRAME_SKIP: settings.defaults.frame_skip,
