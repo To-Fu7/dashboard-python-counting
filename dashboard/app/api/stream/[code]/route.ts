@@ -91,7 +91,6 @@ export async function GET(
   const rtspUrl = env.RTSP_URL;
   const isLocalDevice = /^(\d+|\/dev\/)/.test(rtspUrl);
 
-  const url = new URL(request.url);
   const reqFps = parseFloat(url.searchParams.get('fps') || '0');
   const reqQ = parseInt(url.searchParams.get('q') || '0', 10);
 
