@@ -23,9 +23,10 @@ export async function GET(
 ) {
   const { code } = await params;
   const env = readDeviceEnv(code);
+  const annotatedEnabled = env?.ANNOTATED_STREAM === 'true';
   const streamPort = parseInt(env?.STREAM_PORT || '8090', 10);
 
-  if (!env || streamPort <= 0) {
+  if (!env || !annotatedEnabled || streamPort <= 0) {
     return new Response('Annotated stream not configured', { status: 404 });
   }
 

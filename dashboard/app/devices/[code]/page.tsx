@@ -658,7 +658,7 @@ function StreamPreview({ code, env }: { code: string; env: Partial<DeviceEnvConf
         {!error ? (
           <>
             <img
-              src={`/api/stream/${code}/annotated`}
+              src={env.ANNOTATED_STREAM === 'true' ? `/api/stream/${code}/annotated` : `/api/stream/${code}?plain=1`}
               className="absolute inset-0 w-full h-full object-contain"
               onLoad={() => setLoaded(true)}
               onError={() => setError(true)}
@@ -678,8 +678,10 @@ function StreamPreview({ code, env }: { code: string; env: Partial<DeviceEnvConf
           </>
         ) : (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 gap-1">
-            <p className="text-xs text-gray-400">Annotated stream unavailable</p>
-            <p className="text-xs text-gray-600">Container not reachable on STREAM_PORT {env.STREAM_PORT ?? '8090'}</p>
+            <p className="text-xs text-gray-400">Stream unavailable</p>
+            {env.ANNOTATED_STREAM === 'true' && (
+              <p className="text-xs text-gray-600">Container not reachable on STREAM_PORT {env.STREAM_PORT ?? '8090'}</p>
+            )}
           </div>
         )}
       </div>

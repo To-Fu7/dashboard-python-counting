@@ -76,6 +76,7 @@ export function writeDeviceEnv(deviceCode: string, config: Partial<DeviceEnvConf
     '# VIDEO',
     `SCREEN_RESOLUTION=${config.SCREEN_RESOLUTION ?? '[800, 600]'}`,
     `CROP_AREA=${config.CROP_AREA ?? ''}`,
+    `ANNOTATED_STREAM=${config.ANNOTATED_STREAM ?? 'false'}`,
     `STREAM_PORT=${config.STREAM_PORT ?? '8090'}`,
     '',
     '# YOLO',
