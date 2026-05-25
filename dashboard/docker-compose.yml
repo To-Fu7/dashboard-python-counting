@@ -30,5 +30,5 @@ volumes:
 networks:
   default: {}
   envisions:
-    external: true
-    name: ${COUNTING_NETWORK:-python-counting_envisions}
+    driver: bridge
+    name: envisions

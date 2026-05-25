@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { StatusBadge } from '@/components/StatusBadge';
-import { RefreshCw, Maximize2, Loader2 } from 'lucide-react';
+import { RefreshCw, Maximize2, Loader2, ArrowDownToLine, ArrowUpFromLine } from 'lucide-react';
 import { toast } from 'sonner';
 import type { ContainerStatus } from '@/lib/types';
 
@@ -89,8 +89,8 @@ function drawLineOverlay(
 
     ctx.save();
     ctx.strokeStyle = '#fcd34d';
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([5, 4]);
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([6, 4]);
     ctx.beginPath();
     ctx.moveTo(off1[0], off1[1]);
     ctx.lineTo(off2[0], off2[1]);
@@ -98,7 +98,7 @@ function drawLineOverlay(
     ctx.restore();
 
     ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 3;
     ctx.setLineDash([]);
     ctx.beginPath();
     ctx.moveTo(p1[0], p1[1]);
@@ -106,9 +106,9 @@ function drawLineOverlay(
     ctx.stroke();
 
     ctx.fillStyle = color;
-    ctx.font = 'bold 11px sans-serif';
+    ctx.font = 'bold 13px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(`Gate ${i + 1}`, (p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2 - 6);
+    ctx.fillText(`Gate ${i + 1}`, (p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2 - 8);
   });
 }
 
@@ -116,6 +116,7 @@ function StreamCell({ device }: { device: Device }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [streamLoaded, setStreamLoaded] = useState(false);
   const [streamError, setStreamError] = useState(false);
+  const [counts, setCounts] = useState<{ in: number; out: number } | null>(null);
   const resolution = parseResolution(device.env?.SCREEN_RESOLUTION);
   const detectionMode = device.env?.DETECTION_MODE || 'line_crossing';
   const lines = detectionMode === 'line_crossing' && device.env
@@ -124,6 +125,18 @@ function StreamCell({ device }: { device: Device }) {
     ? parseZonesFromEnv(device.env as Record<string, string>) : [];
   const offsetAxis = device.env?.LINE_OFFSET ?? 'Y';
   const offsetAmount = parseInt(device.env?.LINE_OFFSET_AMOUNT ?? '5', 10);
+
+  useEffect(() => {
+    const load = () => {
+      fetch(`/api/devices/${device.deviceCode}/counts`)
+        .then(r => r.json())
+        .then(d => setCounts({ in: d.in ?? 0, out: d.out ?? 0 }))
+        .catch(() => {});
+    };
+    load();
+    const t = setInterval(load, 30000);
+    return () => clearInterval(t);
+  }, [device.deviceCode]);
 
   // Draw overlay ONCE on canvas — only when lines/zones change, not per frame.
   useEffect(() => {
@@ -142,14 +155,14 @@ function StreamCell({ device }: { device: Device }) {
 
   if (device.status !== 'running') {
     return (
-      <div className="relative bg-black rounded-lg overflow-hidden aspect-video group">
+      <div className="relative bg-black rounded-lg overflow-hidden aspect-video">
         <div className="flex flex-col items-center justify-center h-full text-gray-500 gap-2">
           <div className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center">
             <span className="text-lg text-gray-600">&#9654;</span>
           </div>
           <p className="text-xs">Service not running</p>
         </div>
-        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-3 py-2 translate-y-full group-hover:translate-y-0 transition-transform">
+        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent px-3 py-2">
           <div className="flex items-center justify-between">
             <span className="text-white text-xs font-medium truncate">{device.deviceName}</span>
             <StatusBadge status={device.status} />
@@ -196,10 +209,25 @@ function StreamCell({ device }: { device: Device }) {
         </div>
       )}
 
-      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-3 py-2 translate-y-full group-hover:translate-y-0 transition-transform">
-        <div className="flex items-center justify-between">
+      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent px-3 py-2">
+        <div className="flex items-center justify-between gap-2">
           <span className="text-white text-xs font-medium truncate">{device.deviceName}</span>
-          <StatusBadge status={device.status} />
+          {detectionMode === 'line_crossing' ? (
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="flex items-center gap-1 text-green-400 text-xs font-bold tabular-nums">
+                <ArrowDownToLine className="w-3 h-3" />
+                {counts?.in ?? '—'}
+              </span>
+              <span className="flex items-center gap-1 text-orange-400 text-xs font-bold tabular-nums">
+                <ArrowUpFromLine className="w-3 h-3" />
+                {counts?.out ?? '—'}
+              </span>
+            </div>
+          ) : (
+            <span className="text-blue-400 text-xs font-bold tabular-nums shrink-0">
+              {counts ? `${counts.in} entered` : '—'}
+            </span>
+          )}
         </div>
       </div>
 
@@ -256,7 +284,7 @@ export default function StreamPage() {
   };
 
   return (
-    <div className="p-4 space-y-4 h-full flex flex-col">
+    <div className="p-3 space-y-2 h-full flex flex-col">
       <div className="flex items-center justify-between shrink-0">
         <div>
           <h1 className="text-xl font-semibold">Stream</h1>
@@ -288,7 +316,7 @@ export default function StreamPage() {
           No cameras configured.
         </div>
       ) : (
-        <div className={`grid gap-2 flex-1 ${gridClass[layout]}`}>
+        <div className={`grid gap-1.5 flex-1 ${gridClass[layout]}`}>
           {devices.map(device => (
             <StreamCell key={device.deviceCode} device={device} />
           ))}

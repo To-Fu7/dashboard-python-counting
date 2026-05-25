@@ -18,27 +18,40 @@ async function isContainerRunning(containerName: string): Promise<boolean> {
 
 function proxyAnnotatedStream(host: string, port: number): Promise<ReadableStream | null> {
   return new Promise((resolve) => {
+    let settled = false;
+    const settle = (val: ReadableStream | null) => { if (!settled) { settled = true; resolve(val); } };
+
     const req = httpRequest({ host, port, path: '/', method: 'GET' }, (res) => {
-      if (res.statusCode !== 200) { res.destroy(); resolve(null); return; }
+      if (res.statusCode !== 200) { res.destroy(); settle(null); return; }
 
-      // Clear socket timeout — we have a live 200, data will arrive once Python encodes a frame
-      req.setTimeout(0);
+      res.pause();
 
-      const stream = new ReadableStream({
-        start(controller) {
-          res.on('data', (chunk: Buffer) => {
-            try { controller.enqueue(chunk); } catch { res.destroy(); }
-          });
-          res.on('end', () => { try { controller.close(); } catch {} });
-          res.on('error', () => { try { controller.close(); } catch {} });
-        },
-        cancel() { res.destroy(); },
+      // Wait up to 10s for the first frame — if Python hasn't encoded a frame yet, fall back to ffmpeg
+      const firstByteTimer = setTimeout(() => { res.destroy(); settle(null); }, 10000);
+
+      res.once('data', (firstChunk: Buffer) => {
+        clearTimeout(firstByteTimer);
+        const stream = new ReadableStream({
+          start(controller) {
+            controller.enqueue(firstChunk);
+            res.on('data', (chunk: Buffer) => {
+              try { controller.enqueue(chunk); } catch { res.destroy(); }
+            });
+            res.on('end', () => { try { controller.close(); } catch {} });
+            res.on('error', () => { try { controller.close(); } catch {} });
+            res.resume();
+          },
+          cancel() { res.destroy(); },
+        });
+        settle(stream);
       });
-      resolve(stream);
+
+      res.on('error', () => settle(null));
+      res.resume();
     });
 
-    req.setTimeout(3000, () => { req.destroy(); resolve(null); });
-    req.on('error', () => resolve(null));
+    req.setTimeout(3000, () => { req.destroy(); settle(null); });
+    req.on('error', () => settle(null));
     req.end();
   });
 }

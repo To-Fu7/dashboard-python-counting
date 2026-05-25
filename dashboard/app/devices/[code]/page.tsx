@@ -12,7 +12,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { LineDrawer } from '@/components/LineDrawer';
 import { ZoneDrawer, type DrawnZone } from '@/components/ZoneDrawer';
 import type { CropRect } from '@/lib/types';
-import { Play, Square, RotateCcw, ArrowLeft, Loader2 } from 'lucide-react';
+import { Play, Square, RotateCcw, ArrowLeft, Loader2, ArrowDownToLine, ArrowUpFromLine } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import type { DeviceEnvConfig, ContainerStatus } from '@/lib/types';
@@ -490,7 +490,7 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
         <TabsContent value="logs" className="pt-4 space-y-4">
           {status === 'running' && (
             <Section title="Live Stream">
-              <StreamPreview code={code} />
+              <StreamPreview code={code} env={env} />
             </Section>
           )}
           <Section title="Service Logs">
@@ -551,30 +551,145 @@ function FormField({ label, hint, children }: { label: string; hint?: string; ch
   );
 }
 
-function StreamPreview({ code }: { code: string }) {
+const LINE_COLORS = ['#3b82f6', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6'];
+
+function StreamPreview({ code, env }: { code: string; env: Partial<DeviceEnvConfig> }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
+  const [counts, setCounts] = useState<{ in: number; out: number } | null>(null);
+
+  const resolution = parseResolution(env.SCREEN_RESOLUTION);
+  const detectionMode = env.DETECTION_MODE || 'line_crossing';
+
+  const lines = (() => {
+    if (detectionMode !== 'line_crossing') return [];
+    const result: Array<{ p1: [number, number]; p2: [number, number] }> = [];
+    for (const letter of 'ACEGIKMOQSUWY') {
+      const val = env[`line${letter}`];
+      if (!val) break;
+      try {
+        const p = JSON.parse(val.replace(/\(/g, '[').replace(/\)/g, ']').replace(/'/g, '"'));
+        if (Array.isArray(p) && p.length === 2) result.push({ p1: p[0], p2: p[1] });
+      } catch { /* skip */ }
+    }
+    return result;
+  })();
+
+  const zones = (() => {
+    if (detectionMode !== 'zone') return [];
+    const result: Array<Array<[number, number]>> = [];
+    for (const letter of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') {
+      const val = env[`zone${letter}`];
+      if (!val) break;
+      try {
+        const p = JSON.parse(val.replace(/\(/g, '[').replace(/\)/g, ']').replace(/'/g, '"'));
+        if (Array.isArray(p) && p.length >= 3) result.push(p);
+      } catch { /* skip */ }
+    }
+    return result;
+  })();
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const offsetAxis = env.LINE_OFFSET ?? 'Y';
+    const offsetAmount = parseInt(env.LINE_OFFSET_AMOUNT ?? '5', 10);
+
+    if (detectionMode === 'line_crossing' && lines.length > 0) {
+      lines.forEach(({ p1, p2 }, i) => {
+        const color = LINE_COLORS[i % LINE_COLORS.length];
+        const off1: [number, number] = offsetAxis === 'X' ? [p1[0] + offsetAmount, p1[1]] : [p1[0], p1[1] + offsetAmount];
+        const off2: [number, number] = offsetAxis === 'X' ? [p2[0] + offsetAmount, p2[1]] : [p2[0], p2[1] + offsetAmount];
+        ctx.save();
+        ctx.strokeStyle = '#fcd34d'; ctx.lineWidth = 2; ctx.setLineDash([6, 4]);
+        ctx.beginPath(); ctx.moveTo(off1[0], off1[1]); ctx.lineTo(off2[0], off2[1]); ctx.stroke();
+        ctx.strokeStyle = color; ctx.lineWidth = 3; ctx.setLineDash([]);
+        ctx.beginPath(); ctx.moveTo(p1[0], p1[1]); ctx.lineTo(p2[0], p2[1]); ctx.stroke();
+        ctx.fillStyle = color; ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText(`Gate ${i + 1}`, (p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2 - 8);
+        ctx.restore();
+      });
+    } else if (detectionMode === 'zone' && zones.length > 0) {
+      zones.forEach((pts, i) => {
+        const color = LINE_COLORS[i % LINE_COLORS.length];
+        ctx.save();
+        ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+        pts.slice(1).forEach(([x, y]) => ctx.lineTo(x, y));
+        ctx.closePath();
+        ctx.fillStyle = `${color}40`; ctx.fill();
+        ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.setLineDash([]); ctx.stroke();
+        ctx.restore();
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lines.length, zones.length, detectionMode, env.LINE_OFFSET, env.LINE_OFFSET_AMOUNT]);
+
+  useEffect(() => {
+    const load = () => {
+      fetch(`/api/devices/${code}/counts`)
+        .then(r => r.json())
+        .then(d => setCounts({ in: d.in ?? 0, out: d.out ?? 0 }))
+        .catch(() => {});
+    };
+    load();
+    const t = setInterval(load, 30000);
+    return () => clearInterval(t);
+  }, [code]);
 
   return (
-    <div className="relative bg-black rounded-lg overflow-hidden aspect-video max-h-52">
-      {!error ? (
-        <>
-          <img
-            src={`/api/stream/${code}`}
-            className="w-full h-full object-contain"
-            onLoad={() => setLoaded(true)}
-            onError={() => setError(true)}
-            alt=""
-          />
-          {!loaded && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/70">
-              <Loader2 className="w-5 h-5 text-white/40 animate-spin" />
-            </div>
-          )}
-        </>
+    <div className="space-y-2">
+      <div className="relative bg-black rounded-lg overflow-hidden aspect-video">
+        {!error ? (
+          <>
+            <img
+              src={`/api/stream/${code}/annotated`}
+              className="absolute inset-0 w-full h-full object-contain"
+              onLoad={() => setLoaded(true)}
+              onError={() => setError(true)}
+              alt=""
+            />
+            <canvas
+              ref={canvasRef}
+              width={resolution[0]}
+              height={resolution[1]}
+              className="absolute inset-0 w-full h-full pointer-events-none"
+            />
+            {!loaded && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/70">
+                <Loader2 className="w-5 h-5 text-white/40 animate-spin" />
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 gap-1">
+            <p className="text-xs text-gray-400">Annotated stream unavailable</p>
+            <p className="text-xs text-gray-600">Container not reachable on STREAM_PORT {env.STREAM_PORT ?? '8090'}</p>
+          </div>
+        )}
+      </div>
+
+      {detectionMode === 'line_crossing' ? (
+        <div className="flex gap-3">
+          <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2">
+            <ArrowDownToLine className="w-4 h-4 text-green-500" />
+            <span className="text-xs text-muted-foreground">IN today</span>
+            <span className="text-lg font-bold tabular-nums text-green-500">{counts?.in ?? '—'}</span>
+          </div>
+          <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2">
+            <ArrowUpFromLine className="w-4 h-4 text-orange-500" />
+            <span className="text-xs text-muted-foreground">OUT today</span>
+            <span className="text-lg font-bold tabular-nums text-orange-500">{counts?.out ?? '—'}</span>
+          </div>
+        </div>
       ) : (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/70">
-          <p className="text-xs text-gray-400">Stream unavailable</p>
+        <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 w-fit">
+          <span className="text-xs text-muted-foreground">Entered today</span>
+          <span className="text-lg font-bold tabular-nums text-blue-500">{counts?.in ?? '—'}</span>
         </div>
       )}
     </div>

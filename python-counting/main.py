@@ -91,6 +91,7 @@ MQTT_INTERVAL_MINUTES = int(os.getenv('MQTT_INTERVAL_MINUTES', 5))
 DAILY_SEND_TIME = os.getenv('DAILY_SEND_TIME', '23:59')  # Format: HH:MM
 
 RTSP_URL = os.getenv('RTSP_URL')
+FALLBACK_VIDEO = os.getenv('FALLBACK_VIDEO', '').strip()  # set to a .mp4 path for debug; empty = no fallback
 resolution = ast.literal_eval(os.getenv("SCREEN_RESOLUTION"))
 
 # Hardware video decoding (NVDEC) - set to 'true' to enable CUDA hardware decoding
@@ -648,17 +649,17 @@ def validate_cctv_connection(rtsp_url, timeout=5):
             logging.warning("CCTV stream failed to open")
             cap.release()
             return False
-        
-        # Try to read a frame to verify connection
-        ret, frame = cap.read()
+
+        # Try up to 10 frames — HEVC streams often need a few frames before decode succeeds
+        for _ in range(10):
+            ret, frame = cap.read()
+            if ret and frame is not None:
+                cap.release()
+                logging.info("CCTV connection validated successfully")
+                return True
         cap.release()
-        
-        if ret and frame is not None:
-            logging.info("CCTV connection validated successfully")
-            return True
-        else:
-            logging.warning("CCTV stream opened but failed to read frame")
-            return False
+        logging.warning("CCTV stream opened but failed to read frame after 10 attempts")
+        return False
             
     except Exception as e:
         logging.warning(f"CCTV validation error: {e}")
@@ -674,12 +675,19 @@ def initialize_video_capture(video_source):
     """Initialize video capture with the given video source (RTSP URL or file path)"""
     logging.info(f'Initializing video capture with source: {video_source}')
 
-    # Enable NVIDIA hardware video decoding (NVDEC) if configured
     if ENABLE_NVDEC:
-        # Set FFmpeg options for CUDA hardware decoding
-        # This offloads H.264/HEVC decoding from CPU to GPU
-        os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = 'hwaccel;cuda|video_codec;h264_cuvid|rtsp_transport;tcp'
-        logging.info('NVDEC hardware decoding enabled (h264_cuvid)')
+        for codec in ('h264_cuvid', 'hevc_cuvid'):
+            os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = f'hwaccel;cuda|video_codec;{codec}|rtsp_transport;tcp'
+            cap = cv2.VideoCapture(video_source, cv2.CAP_FFMPEG)
+            if cap.isOpened():
+                logging.info(f'NVDEC hardware decoding enabled ({codec})')
+                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                cap.set(cv2.CAP_PROP_FPS, 10)
+                return cap
+            cap.release()
+            logging.warning(f'NVDEC {codec} failed, trying next...')
+        logging.warning('All NVDEC codecs failed, falling back to software decoding')
+        del os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS']
 
     cap = cv2.VideoCapture(video_source, cv2.CAP_FFMPEG)
     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
@@ -687,27 +695,23 @@ def initialize_video_capture(video_source):
     return cap
 
 def get_video_source():
-    """Get video source with CCTV validation and fallback to 1.mp4"""
-    fallback_video = '1.mp4'
-    
-    # Check if RTSP_URL is set
+    """Get video source. Uses FALLBACK_VIDEO env for debug; no fallback if unset."""
+    # Debug override: use a local video file instead of RTSP
+    if FALLBACK_VIDEO:
+        if os.path.exists(FALLBACK_VIDEO):
+            logging.info(f"FALLBACK_VIDEO set — using {FALLBACK_VIDEO}")
+            return FALLBACK_VIDEO
+        else:
+            logging.warning(f"FALLBACK_VIDEO={FALLBACK_VIDEO} not found, ignoring")
+
     if not RTSP_URL or RTSP_URL.strip() == '':
-        logging.warning(f"RTSP_URL is not set or empty. Falling back to {fallback_video}")
-        return fallback_video
-    
-    # Validate CCTV connection
+        raise RuntimeError("RTSP_URL is not set. Set FALLBACK_VIDEO to use a local video for testing.")
+
     if validate_cctv_connection(RTSP_URL):
         logging.info("Using CCTV stream as video source")
         return RTSP_URL
-    else:
-        logging.warning(f"CCTV connection failed or disabled. Falling back to {fallback_video}")
-        # Verify fallback file exists
-        if os.path.exists(fallback_video):
-            logging.info(f"Fallback video file found: {fallback_video}")
-            return fallback_video
-        else:
-            logging.error(f"Fallback video file not found: {fallback_video}")
-            raise FileNotFoundError(f"Neither CCTV stream nor fallback video file ({fallback_video}) is available")
+
+    raise RuntimeError(f"RTSP connection failed: {RTSP_URL}. Retrying in 5s... (set FALLBACK_VIDEO=1.mp4 for offline testing)")
 
 def db_connect():
     """Create database connection"""
@@ -1065,7 +1069,7 @@ def RGB(event, x, y, flags, param):
 
 def main():
     """Main function"""
-    global person_in, person_out, is_midnight, record_id, latest_person_coordinates, interval_person_in, interval_person_out, db_thread_running, resample_hour_in, resample_hour_out
+    global person_in, person_out, is_midnight, record_id, latest_person_coordinates, interval_person_in, interval_person_out, db_thread_running, resample_hour_in, resample_hour_out, _stream_frame
 
     # Start async database worker thread
     if not DEBUG_MODE:
@@ -1090,13 +1094,12 @@ def main():
     logging.info(f"Daily MQTT send time: {DAILY_SEND_TIME}")
     logging.info(f"Image crop settings - Padding: {CROP_PADDING}px, Min size: {MIN_CROP_SIZE}, Quality: {JPEG_QUALITY}%")
     
-    # Get video source with CCTV validation and fallback
     try:
         video_source = get_video_source()
         logging.info(f"Video source selected: {video_source}")
-    except FileNotFoundError as e:
-        logging.error(f"Fatal error: {e}")
-        return
+    except RuntimeError as e:
+        logging.error(str(e))
+        raise  # let outer loop retry after 5s
     
     resolved_device = resolve_yolo_device(YOLO_DEVICE)
 
