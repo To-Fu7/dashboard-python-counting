@@ -19,6 +19,8 @@ import base64
 from dotenv import load_dotenv
 import paho.mqtt.client as mqtt
 import threading
+import socketserver
+from http.server import BaseHTTPRequestHandler
 import ast
 import string
 import queue
@@ -89,6 +91,7 @@ MQTT_INTERVAL_MINUTES = int(os.getenv('MQTT_INTERVAL_MINUTES', 5))
 DAILY_SEND_TIME = os.getenv('DAILY_SEND_TIME', '23:59')  # Format: HH:MM
 
 RTSP_URL = os.getenv('RTSP_URL')
+FALLBACK_VIDEO = os.getenv('FALLBACK_VIDEO', '').strip()  # set to a .mp4 path for debug; empty = no fallback
 resolution = ast.literal_eval(os.getenv("SCREEN_RESOLUTION"))
 
 # Hardware video decoding (NVDEC) - set to 'true' to enable CUDA hardware decoding
@@ -264,31 +267,21 @@ logging.info(f"SWAP_IN_OUT = {SWAP_IN_OUT} ({'IN line first → count IN' if SWA
 logging.info(f"MERGE_GATES = {MERGE_GATES} ({'all gates unified' if MERGE_GATES else 'gates isolated'})")
 
 
-# Detection region parameters
-# 'false' or '0' = global detection (full frame), any number = margin in pixels
-_detection_margin_raw = os.getenv('DETECTION_MARGIN', '160').strip().lower()
-GLOBAL_DETECTION = _detection_margin_raw in ('false', '0')
-DETECTION_MARGIN = 0 if GLOBAL_DETECTION else int(_detection_margin_raw)
-
-if DETECTION_MODE == 'line_crossing' and LINE_PAIRS:
-    all_line_points_y = []
-    for lp in LINE_PAIRS:
-        for (x, y) in lp["in_line"] + lp["out_line"]:
-            all_line_points_y.append(y)
-
-    if GLOBAL_DETECTION:
-        DETECTION_Y_MIN = 0
-        DETECTION_Y_MAX = None  # Will use full frame height
-        logging.info("Detection region: GLOBAL (full frame)")
-    else:
-        DETECTION_Y_MIN = max(0, min(all_line_points_y) - DETECTION_MARGIN)
-        DETECTION_Y_MAX = max(all_line_points_y) + DETECTION_MARGIN
-        logging.info(f"Detection region: Y from {DETECTION_Y_MIN} to {DETECTION_Y_MAX} (margin: {DETECTION_MARGIN}px)")
+# Crop area: defines the rectangle that YOLO processes.
+# Format: [(x1,y1),(x2,y2)] top-left → bottom-right in SCREEN_RESOLUTION pixels.
+# If not set, uses full frame.
+_crop_area_raw = os.getenv('CROP_AREA', '').strip()
+CROP_X1, CROP_Y1, CROP_X2, CROP_Y2 = 0, 0, None, None
+if _crop_area_raw:
+    try:
+        _crop_pts = ast.literal_eval(_crop_area_raw)
+        CROP_X1, CROP_Y1 = int(_crop_pts[0][0]), int(_crop_pts[0][1])
+        CROP_X2, CROP_Y2 = int(_crop_pts[1][0]), int(_crop_pts[1][1])
+        logging.info(f"Crop area: ({CROP_X1},{CROP_Y1}) → ({CROP_X2},{CROP_Y2})")
+    except Exception as e:
+        logging.warning(f"Failed to parse CROP_AREA, using full frame: {e}")
 else:
-    # Zone mode: always scan full frame
-    DETECTION_Y_MIN = 0
-    DETECTION_Y_MAX = None
-    logging.info("Detection region: GLOBAL (full frame, zone mode)")
+    logging.info("No CROP_AREA set, detection uses full frame")
 
 # Image quality settings
 CROP_PADDING = 30
@@ -308,6 +301,65 @@ FRAME_SKIP = max(1, int(os.getenv('FRAME_SKIP', '2')))  # Process 1 out of every
 
 # DEBUG MODE
 DEBUG_MODE = os.getenv('DEBUG_MODE', 'true').lower() == 'true'
+
+# ANNOTATED STREAM — serve annotated MJPEG on this port (0 = disabled)
+ANNOTATED_STREAM = os.getenv('ANNOTATED_STREAM', 'false').strip().lower() in ('true', '1', 'yes')
+STREAM_PORT = int(os.getenv('STREAM_PORT', '8090')) if ANNOTATED_STREAM else 0
+STREAM_JPEG_QUALITY = int(os.getenv('STREAM_JPEG_QUALITY', '50'))
+
+_stream_frame: bytes | None = None
+_stream_lock = threading.Lock()
+_stream_clients = 0  # active MJPEG viewer count
+_stream_clients_lock = threading.Lock()
+
+DRAW_OVERLAYS = DEBUG_MODE or (STREAM_PORT > 0)
+
+
+class _MJPEGHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path not in ('/', '/stream'):
+            self.send_error(404)
+            return
+        self.send_response(200)
+        self.send_header('Content-Type', 'multipart/x-mixed-replace; boundary=frame')
+        self.send_header('Cache-Control', 'no-cache')
+        self.send_header('Connection', 'keep-alive')
+        self.end_headers()
+        global _stream_clients
+        with _stream_clients_lock:
+            _stream_clients += 1
+        try:
+            while True:
+                with _stream_lock:
+                    frame = _stream_frame
+                if frame is not None:
+                    header = (
+                        b'--frame\r\n'
+                        b'Content-Type: image/jpeg\r\n'
+                        + f'Content-Length: {len(frame)}\r\n\r\n'.encode()
+                    )
+                    self.wfile.write(header + frame + b'\r\n')
+                    self.wfile.flush()
+                time.sleep(0.04)  # ~25 fps cap
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
+        finally:
+            with _stream_clients_lock:
+                _stream_clients -= 1
+
+    def log_message(self, format, *args):  # suppress access logs
+        pass
+
+
+def _start_mjpeg_server():
+    socketserver.TCPServer.allow_reuse_address = True
+    with socketserver.ThreadingTCPServer(('', STREAM_PORT), _MJPEGHandler) as srv:
+        logging.info(f"Annotated MJPEG stream serving on :{STREAM_PORT}")
+        srv.serve_forever()
+
+
+if STREAM_PORT > 0:
+    threading.Thread(target=_start_mjpeg_server, daemon=True).start()
 
 def resolve_yolo_device(device_str):
     if device_str.lower() == 'auto':
@@ -559,12 +611,6 @@ def should_send_interval_mqtt():
     
     return False
 
-def is_in_detection_region(box):
-    """Check if detected person is within the detection region"""
-    if GLOBAL_DETECTION:
-        return True
-    x1, y1, x2, y2 = box
-    return not (y2 < DETECTION_Y_MIN or y1 > DETECTION_Y_MAX)
 
 def is_crossing_line(p1, p2, line):
     """Check if segment p1-p2 crosses the given line using cross product"""
@@ -612,17 +658,17 @@ def validate_cctv_connection(rtsp_url, timeout=5):
             logging.warning("CCTV stream failed to open")
             cap.release()
             return False
-        
-        # Try to read a frame to verify connection
-        ret, frame = cap.read()
+
+        # Try up to 10 frames — HEVC streams often need a few frames before decode succeeds
+        for _ in range(10):
+            ret, frame = cap.read()
+            if ret and frame is not None:
+                cap.release()
+                logging.info("CCTV connection validated successfully")
+                return True
         cap.release()
-        
-        if ret and frame is not None:
-            logging.info("CCTV connection validated successfully")
-            return True
-        else:
-            logging.warning("CCTV stream opened but failed to read frame")
-            return False
+        logging.warning("CCTV stream opened but failed to read frame after 10 attempts")
+        return False
             
     except Exception as e:
         logging.warning(f"CCTV validation error: {e}")
@@ -638,12 +684,19 @@ def initialize_video_capture(video_source):
     """Initialize video capture with the given video source (RTSP URL or file path)"""
     logging.info(f'Initializing video capture with source: {video_source}')
 
-    # Enable NVIDIA hardware video decoding (NVDEC) if configured
     if ENABLE_NVDEC:
-        # Set FFmpeg options for CUDA hardware decoding
-        # This offloads H.264/HEVC decoding from CPU to GPU
-        os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = 'hwaccel;cuda|video_codec;h264_cuvid|rtsp_transport;tcp'
-        logging.info('NVDEC hardware decoding enabled (h264_cuvid)')
+        for codec in ('h264_cuvid', 'hevc_cuvid'):
+            os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = f'hwaccel;cuda|video_codec;{codec}|rtsp_transport;tcp'
+            cap = cv2.VideoCapture(video_source, cv2.CAP_FFMPEG)
+            if cap.isOpened():
+                logging.info(f'NVDEC hardware decoding enabled ({codec})')
+                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                cap.set(cv2.CAP_PROP_FPS, 10)
+                return cap
+            cap.release()
+            logging.warning(f'NVDEC {codec} failed, trying next...')
+        logging.warning('All NVDEC codecs failed, falling back to software decoding')
+        del os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS']
 
     cap = cv2.VideoCapture(video_source, cv2.CAP_FFMPEG)
     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
@@ -651,27 +704,23 @@ def initialize_video_capture(video_source):
     return cap
 
 def get_video_source():
-    """Get video source with CCTV validation and fallback to 1.mp4"""
-    fallback_video = '1.mp4'
-    
-    # Check if RTSP_URL is set
+    """Get video source. Uses FALLBACK_VIDEO env for debug; no fallback if unset."""
+    # Debug override: use a local video file instead of RTSP
+    if FALLBACK_VIDEO:
+        if os.path.exists(FALLBACK_VIDEO):
+            logging.info(f"FALLBACK_VIDEO set — using {FALLBACK_VIDEO}")
+            return FALLBACK_VIDEO
+        else:
+            logging.warning(f"FALLBACK_VIDEO={FALLBACK_VIDEO} not found, ignoring")
+
     if not RTSP_URL or RTSP_URL.strip() == '':
-        logging.warning(f"RTSP_URL is not set or empty. Falling back to {fallback_video}")
-        return fallback_video
-    
-    # Validate CCTV connection
+        raise RuntimeError("RTSP_URL is not set. Set FALLBACK_VIDEO to use a local video for testing.")
+
     if validate_cctv_connection(RTSP_URL):
         logging.info("Using CCTV stream as video source")
         return RTSP_URL
-    else:
-        logging.warning(f"CCTV connection failed or disabled. Falling back to {fallback_video}")
-        # Verify fallback file exists
-        if os.path.exists(fallback_video):
-            logging.info(f"Fallback video file found: {fallback_video}")
-            return fallback_video
-        else:
-            logging.error(f"Fallback video file not found: {fallback_video}")
-            raise FileNotFoundError(f"Neither CCTV stream nor fallback video file ({fallback_video}) is available")
+
+    raise RuntimeError(f"RTSP connection failed: {RTSP_URL}. Retrying in 5s... (set FALLBACK_VIDEO=1.mp4 for offline testing)")
 
 def db_connect():
     """Create database connection"""
@@ -1029,7 +1078,7 @@ def RGB(event, x, y, flags, param):
 
 def main():
     """Main function"""
-    global person_in, person_out, is_midnight, record_id, latest_person_coordinates, interval_person_in, interval_person_out, db_thread_running, resample_hour_in, resample_hour_out
+    global person_in, person_out, is_midnight, record_id, latest_person_coordinates, interval_person_in, interval_person_out, db_thread_running, resample_hour_in, resample_hour_out, _stream_frame, _stream_clients
 
     # Start async database worker thread
     if not DEBUG_MODE:
@@ -1054,13 +1103,12 @@ def main():
     logging.info(f"Daily MQTT send time: {DAILY_SEND_TIME}")
     logging.info(f"Image crop settings - Padding: {CROP_PADDING}px, Min size: {MIN_CROP_SIZE}, Quality: {JPEG_QUALITY}%")
     
-    # Get video source with CCTV validation and fallback
     try:
         video_source = get_video_source()
         logging.info(f"Video source selected: {video_source}")
-    except FileNotFoundError as e:
-        logging.error(f"Fatal error: {e}")
-        return
+    except RuntimeError as e:
+        logging.error(str(e))
+        raise  # let outer loop retry after 5s
     
     resolved_device = resolve_yolo_device(YOLO_DEVICE)
 
@@ -1130,11 +1178,8 @@ def main():
                 # frame = cv2.resize(frame, (1280, 720))
                 frame = cv2.resize(frame, (resolution[0], resolution[1]))
 
-                # Create detection frame (cropped region or full frame)
-                if GLOBAL_DETECTION:
-                    detection_frame = frame
-                else:
-                    detection_frame = frame[DETECTION_Y_MIN:DETECTION_Y_MAX, :]
+                # Crop frame to user-defined detection area before YOLO inference
+                detection_frame = frame[CROP_Y1:CROP_Y2, CROP_X1:CROP_X2]
                 
                 # Run YOLO only on the detection region with confidence threshold
                 results = model.track(
@@ -1143,8 +1188,9 @@ def main():
                     classes=[0], iou=0.3, imgsz=YOLO_IMGSZ, half=True,
                     tracker="bytetrack.yaml")
 
-                # Draw detection overlays (only in DEBUG_MODE)
-                if DEBUG_MODE:
+                # Draw detection overlays (only when DEBUG_MODE or someone is watching the stream)
+                draw_now = DEBUG_MODE or _stream_clients > 0
+                if draw_now:
                     if DETECTION_MODE == 'zone':
                         zone_colors_bgr = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (0, 255, 255), (255, 0, 255)]
                         for zi, zone in enumerate(ZONES):
@@ -1195,15 +1241,16 @@ def main():
                             cv2.putText(frame, 'OUT', (out_start[0] - 10, out_start[1] - 10),
                                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
 
-                    # Draw detection region boundaries (skip in global mode)
-                    if not GLOBAL_DETECTION:
-                        cv2.line(frame, (0, DETECTION_Y_MIN), (1920, DETECTION_Y_MIN), (0, 255, 0), 2)
-                        cv2.line(frame, (0, DETECTION_Y_MAX), (1920, DETECTION_Y_MAX), (0, 222, 0), 2)
-                        cv2.putText(frame, 'Detection Region', (10, DETECTION_Y_MIN - 10),
-                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                    # Draw crop area rectangle if defined
+                    if CROP_X2 or CROP_Y2:
+                        cx2 = CROP_X2 if CROP_X2 else frame.shape[1]
+                        cy2 = CROP_Y2 if CROP_Y2 else frame.shape[0]
+                        cv2.rectangle(frame, (CROP_X1, CROP_Y1), (cx2, cy2), (0, 255, 255), 2)
+                        cv2.putText(frame, 'Crop Area', (CROP_X1 + 4, CROP_Y1 + 18),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
 
-                # Copy frame for DEBUG_MODE annotations or zone MQTT (needs annotated copy)
-                if DEBUG_MODE or DETECTION_MODE == 'zone':
+                # Copy frame for zone MQTT (needs clean copy before drawing)
+                if DETECTION_MODE == 'zone':
                     original_frame = frame.copy()
                 else:
                     original_frame = frame
@@ -1229,8 +1276,10 @@ def main():
                             
                             # Adjust box coordinates back to full frame
                             x1, y1, x2, y2 = box
-                            y1 += DETECTION_Y_MIN
-                            y2 += DETECTION_Y_MIN
+                            x1 += CROP_X1
+                            y1 += CROP_Y1
+                            x2 += CROP_X1
+                            y2 += CROP_Y1
                             adjusted_box = [x1, y1, x2, y2]
                             
                             # Store person coordinates for MQTT
@@ -1264,8 +1313,8 @@ def main():
                                         first_point = (x1 - DOT_OFFSET_AMOUNT, (y1 + y2) // 2)
                                         second_point = (x2 + DOT_OFFSET_AMOUNT, (y1 + y2) // 2)
 
-                            # Draw person bounding box (only in DEBUG_MODE)
-                            if DEBUG_MODE:
+                            # Draw person bounding box
+                            if draw_now:
                                 cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
                                 cvzone.putTextRect(frame, f'{track_id}', (x1, y1), 1, 1)
                                 if DETECTION_MODE == 'line_crossing':
@@ -1465,11 +1514,18 @@ def main():
                         logging.info("Waiting for person detection...")
                         last_waiting_log = current_time
 
-                # Display counters (only in DEBUG_MODE)
-                if DEBUG_MODE:
+                # Display counters
+                if draw_now:
                     cv2.putText(frame, f'IN: {person_in}', (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
                     cv2.putText(frame, f'OUT: {person_out}', (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
                     cv2.putText(frame, f'Region Detections: {region_detections}', (50, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+
+                # Push annotated frame to MJPEG server (only when there are active viewers)
+                if STREAM_PORT > 0 and _stream_clients > 0:
+                    ok, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, STREAM_JPEG_QUALITY])
+                    if ok:
+                        with _stream_lock:
+                            _stream_frame = jpeg.tobytes()
 
                 #SCREEN
                 if DEBUG_MODE:

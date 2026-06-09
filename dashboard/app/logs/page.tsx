@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, ArrowDownToLine, ArrowUpFromLine } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface LogEntry {
@@ -32,6 +32,8 @@ export default function LogsPage() {
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [liveStreaming, setLiveStreaming] = useState(false);
+  const [counts, setCounts] = useState<{ in: number; out: number } | null>(null);
+  const [countsLoading, setCountsLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -72,6 +74,17 @@ export default function LogsPage() {
     const interval = setInterval(fetchLogs, 5000);
     return () => clearInterval(interval);
   }, [selectedCode, autoRefresh, fetchLogs]);
+
+  // Fetch today's counts when a specific device is selected
+  useEffect(() => {
+    if (selectedCode === 'all') { setCounts(null); return; }
+    setCountsLoading(true);
+    fetch(`/api/devices/${selectedCode}/counts`)
+      .then(r => r.json())
+      .then(d => setCounts(d))
+      .catch(() => setCounts(null))
+      .finally(() => setCountsLoading(false));
+  }, [selectedCode]);
 
   // Specific device mode: SSE streaming
   useEffect(() => {
@@ -177,6 +190,25 @@ export default function LogsPage() {
           className="max-w-72"
         />
       </div>
+
+      {selectedCode !== 'all' && (
+        <div className="flex gap-3">
+          <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2.5">
+            <ArrowDownToLine className="w-4 h-4 text-green-500" />
+            <span className="text-xs text-muted-foreground">IN today</span>
+            <span className="text-lg font-bold tabular-nums text-green-500">
+              {countsLoading ? '—' : (counts?.in ?? 0)}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2.5">
+            <ArrowUpFromLine className="w-4 h-4 text-orange-500" />
+            <span className="text-xs text-muted-foreground">OUT today</span>
+            <span className="text-lg font-bold tabular-nums text-orange-500">
+              {countsLoading ? '—' : (counts?.out ?? 0)}
+            </span>
+          </div>
+        </div>
+      )}
 
       <div className="flex-1 min-h-0">
         <div

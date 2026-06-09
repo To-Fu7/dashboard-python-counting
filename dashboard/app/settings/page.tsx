@@ -146,9 +146,6 @@ export default function SettingsPage() {
           <FormField label="Frame Skip">
             <Input type="number" value={settings.defaults.frame_skip} onChange={e => setDefault('frame_skip', e.target.value)} />
           </FormField>
-          <FormField label="Detection Margin (px)">
-            <Input type="number" value={settings.defaults.detection_margin} onChange={e => setDefault('detection_margin', e.target.value)} />
-          </FormField>
           <FormField label="MQTT Interval (minutes)">
             <Input type="number" value={settings.defaults.mqtt_interval_minutes} onChange={e => setDefault('mqtt_interval_minutes', e.target.value)} />
           </FormField>

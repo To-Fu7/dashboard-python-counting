@@ -16,7 +16,9 @@ export interface DeviceEnvConfig {
   RTSP_URL: string;
   DEBUG_MODE: string;
   SCREEN_RESOLUTION: string;
-  DETECTION_MARGIN: string;
+  CROP_AREA?: string;         // '[(x1,y1),(x2,y2)]' top-left → bottom-right
+  ANNOTATED_STREAM?: string;  // 'true' = serve annotated MJPEG with bboxes on device detail page
+  STREAM_PORT?: string;       // annotated MJPEG port (default 8090)
   YOLO_MODEL: string;
   YOLO_CONFIDENCE: string;
   ENABLE_NVDEC: string;
@@ -41,6 +43,8 @@ export interface DeviceEnvConfig {
   zoneE?: string;
   [key: string]: string | undefined;
 }
+
+export interface CropRect { x1: number; y1: number; x2: number; y2: number }
 
 export interface LinePoint {
   x: number;
@@ -100,7 +104,6 @@ export interface GlobalSettings {
     jpeg_quality: string;
     fps_limit: string;
     frame_skip: string;
-    detection_margin: string;
   };
 }
 
@@ -130,6 +133,5 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
     jpeg_quality: '40',
     fps_limit: '0',
     frame_skip: '2',
-    detection_margin: '30',
   },
 };

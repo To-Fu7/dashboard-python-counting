@@ -11,7 +11,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { StatusBadge } from '@/components/StatusBadge';
 import { LineDrawer } from '@/components/LineDrawer';
 import { ZoneDrawer, type DrawnZone } from '@/components/ZoneDrawer';
-import { Play, Square, RotateCcw, ArrowLeft, Loader2 } from 'lucide-react';
+import type { CropRect } from '@/lib/types';
+import { Play, Square, RotateCcw, ArrowLeft, Loader2, ArrowDownToLine, ArrowUpFromLine } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import type { DeviceEnvConfig, ContainerStatus } from '@/lib/types';
@@ -39,6 +40,19 @@ function drawnZonesToEnv(zones: DrawnZone[]): Record<string, string> {
     result[`zone${zone.label}`] = `[${zone.points.map(p => `(${p.x}, ${p.y})`).join(', ')}]`;
   }
   return result;
+}
+
+function envToCropRect(env: Partial<DeviceEnvConfig>): CropRect | null {
+  const val = env.CROP_AREA;
+  if (!val) return null;
+  try {
+    const parsed = JSON.parse(val.replace(/\(/g, '[').replace(/\)/g, ']').replace(/'/g, '"'));
+    return { x1: parsed[0][0], y1: parsed[0][1], x2: parsed[1][0], y2: parsed[1][1] };
+  } catch { return null; }
+}
+
+function cropRectToEnv(c: CropRect): string {
+  return `[(${c.x1}, ${c.y1}), (${c.x2}, ${c.y2})]`;
 }
 
 function parseResolution(res: string | undefined): [number, number] {
@@ -98,6 +112,7 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
   const logScrollRef = useRef<HTMLDivElement>(null);
   const [lines, setLines] = useState<DrawnLine[]>([]);
   const [zones, setZones] = useState<DrawnZone[]>([]);
+  const [cropRect, setCropRect] = useState<CropRect | null>(null);
 
   const fetchDevice = useCallback(async () => {
     try {
@@ -108,6 +123,7 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
       setStatus(data.status);
       setLines(envLinesToDrawn(data.env));
       setZones(envZonesToDrawn(data.env));
+      setCropRect(envToCropRect(data.env));
     } catch {
       toast.error('Failed to load device');
     } finally {
@@ -175,9 +191,11 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
       for (const letter of 'ACEGIKMOQSUWY') clearLines[`line${letter}`] = undefined;
       for (const letter of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') clearZones[`zone${letter}`] = undefined;
 
+      const cropEnv = { CROP_AREA: cropRect ? cropRectToEnv(cropRect) : '' };
+
       const payload = mode === 'line_crossing'
-        ? { ...env, ...clearZones, ...clearLines, ...drawnLinesToEnv(lines) }
-        : { ...env, ...clearLines, ...clearZones, ...drawnZonesToEnv(zones) };
+        ? { ...env, ...cropEnv, ...clearZones, ...clearLines, ...drawnLinesToEnv(lines) }
+        : { ...env, ...cropEnv, ...clearLines, ...clearZones, ...drawnZonesToEnv(zones) };
 
       const res = await fetch(`/api/devices/${code}`, {
         method: 'PUT',
@@ -304,9 +322,6 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
                   </SelectContent>
                 </Select>
               </FormField>
-              <FormField label="Detection Margin (px)">
-                <Input type="number" value={env.DETECTION_MARGIN || '30'} onChange={e => setField('DETECTION_MARGIN', e.target.value)} />
-              </FormField>
               <FormField label="FPS Limit (0 = unlimited)">
                 <Input type="number" value={env.FPS_LIMIT || '0'} onChange={e => setField('FPS_LIMIT', e.target.value)} />
               </FormField>
@@ -334,6 +349,17 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
                     onCheckedChange={v => setField('ENABLE_NVDEC', v ? 'true' : 'false')}
                   />
                   <span className="text-sm text-muted-foreground">{env.ENABLE_NVDEC === 'true' ? 'Enabled' : 'Disabled'}</span>
+                </div>
+              </FormField>
+              <FormField label="Annotated Stream (Bounding Box)">
+                <div className="flex items-center gap-2 pt-2">
+                  <Switch
+                    checked={env.ANNOTATED_STREAM === 'true'}
+                    onCheckedChange={v => setField('ANNOTATED_STREAM', v ? 'true' : 'false')}
+                  />
+                  <span className="text-sm text-muted-foreground">
+                    {env.ANNOTATED_STREAM === 'true' ? 'Enabled — bounding boxes visible on device detail' : 'Disabled — plain stream only (lower CPU)'}
+                  </span>
                 </div>
               </FormField>
             </div>
@@ -446,6 +472,8 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
                   offsetAxis={env.LINE_OFFSET || 'Y'}
                   offsetAmount={parseInt(env.LINE_OFFSET_AMOUNT || '5', 10)}
                   onChange={setLines}
+                  cropRect={cropRect}
+                  onCropChange={setCropRect}
                 />
               </Section>
             </>
@@ -456,6 +484,8 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
                 resolution={parseResolution(env.SCREEN_RESOLUTION)}
                 initialZones={zones}
                 onChange={setZones}
+                cropRect={cropRect}
+                onCropChange={setCropRect}
               />
             </Section>
           )}
@@ -471,7 +501,7 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
         <TabsContent value="logs" className="pt-4 space-y-4">
           {status === 'running' && (
             <Section title="Live Stream">
-              <StreamPreview code={code} />
+              <StreamPreview code={code} env={env} />
             </Section>
           )}
           <Section title="Service Logs">
@@ -532,51 +562,147 @@ function FormField({ label, hint, children }: { label: string; hint?: string; ch
   );
 }
 
-function StreamPreview({ code }: { code: string }) {
+const LINE_COLORS = ['#3b82f6', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6'];
+
+function StreamPreview({ code, env }: { code: string; env: Partial<DeviceEnvConfig> }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [connecting, setConnecting] = useState(true);
+  const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
+  const [counts, setCounts] = useState<{ in: number; out: number } | null>(null);
+
+  const resolution = parseResolution(env.SCREEN_RESOLUTION);
+  const detectionMode = env.DETECTION_MODE || 'line_crossing';
+
+  const lines = (() => {
+    if (detectionMode !== 'line_crossing') return [];
+    const result: Array<{ p1: [number, number]; p2: [number, number] }> = [];
+    for (const letter of 'ACEGIKMOQSUWY') {
+      const val = env[`line${letter}`];
+      if (!val) break;
+      try {
+        const p = JSON.parse(val.replace(/\(/g, '[').replace(/\)/g, ']').replace(/'/g, '"'));
+        if (Array.isArray(p) && p.length === 2) result.push({ p1: p[0], p2: p[1] });
+      } catch { /* skip */ }
+    }
+    return result;
+  })();
+
+  const zones = (() => {
+    if (detectionMode !== 'zone') return [];
+    const result: Array<Array<[number, number]>> = [];
+    for (const letter of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') {
+      const val = env[`zone${letter}`];
+      if (!val) break;
+      try {
+        const p = JSON.parse(val.replace(/\(/g, '[').replace(/\)/g, ']').replace(/'/g, '"'));
+        if (Array.isArray(p) && p.length >= 3) result.push(p);
+      } catch { /* skip */ }
+    }
+    return result;
+  })();
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    setConnecting(true);
-    setError(false);
+    const offsetAxis = env.LINE_OFFSET ?? 'Y';
+    const offsetAmount = parseInt(env.LINE_OFFSET_AMOUNT ?? '5', 10);
 
-    const es = new EventSource(`/api/stream/${code}`);
-    let drawPending = false;
+    if (detectionMode === 'line_crossing' && lines.length > 0) {
+      lines.forEach(({ p1, p2 }, i) => {
+        const color = LINE_COLORS[i % LINE_COLORS.length];
+        const off1: [number, number] = offsetAxis === 'X' ? [p1[0] + offsetAmount, p1[1]] : [p1[0], p1[1] + offsetAmount];
+        const off2: [number, number] = offsetAxis === 'X' ? [p2[0] + offsetAmount, p2[1]] : [p2[0], p2[1] + offsetAmount];
+        ctx.save();
+        ctx.strokeStyle = '#fcd34d'; ctx.lineWidth = 2; ctx.setLineDash([6, 4]);
+        ctx.beginPath(); ctx.moveTo(off1[0], off1[1]); ctx.lineTo(off2[0], off2[1]); ctx.stroke();
+        ctx.strokeStyle = color; ctx.lineWidth = 3; ctx.setLineDash([]);
+        ctx.beginPath(); ctx.moveTo(p1[0], p1[1]); ctx.lineTo(p2[0], p2[1]); ctx.stroke();
+        ctx.fillStyle = color; ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText(`Gate ${i + 1}`, (p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2 - 8);
+        ctx.restore();
+      });
+    } else if (detectionMode === 'zone' && zones.length > 0) {
+      zones.forEach((pts, i) => {
+        const color = LINE_COLORS[i % LINE_COLORS.length];
+        ctx.save();
+        ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+        pts.slice(1).forEach(([x, y]) => ctx.lineTo(x, y));
+        ctx.closePath();
+        ctx.fillStyle = `${color}40`; ctx.fill();
+        ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.setLineDash([]); ctx.stroke();
+        ctx.restore();
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lines.length, zones.length, detectionMode, env.LINE_OFFSET, env.LINE_OFFSET_AMOUNT]);
 
-    es.onmessage = (event) => {
-      if (drawPending) return;
-      drawPending = true;
-      setConnecting(false);
-      const img = new Image();
-      img.onload = () => {
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        drawPending = false;
-      };
-      img.src = `data:image/jpeg;base64,${event.data}`;
+  useEffect(() => {
+    const load = () => {
+      fetch(`/api/devices/${code}/counts`)
+        .then(r => r.json())
+        .then(d => setCounts({ in: d.in ?? 0, out: d.out ?? 0 }))
+        .catch(() => {});
     };
-
-    es.onerror = () => { setError(true); es.close(); };
-
-    return () => es.close();
+    load();
+    const t = setInterval(load, 30000);
+    return () => clearInterval(t);
   }, [code]);
 
   return (
-    <div className="relative bg-black rounded-lg overflow-hidden aspect-video max-h-52">
-      <canvas ref={canvasRef} width={800} height={600} className="w-full h-full" />
-      {connecting && !error && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/70">
-          <Loader2 className="w-5 h-5 text-white/40 animate-spin" />
+    <div className="space-y-2">
+      <div className="relative bg-black rounded-lg overflow-hidden aspect-video">
+        {!error ? (
+          <>
+            <img
+              src={env.ANNOTATED_STREAM === 'true' ? `/api/stream/${code}/annotated` : `/api/stream/${code}?plain=1`}
+              className="absolute inset-0 w-full h-full object-contain"
+              onLoad={() => setLoaded(true)}
+              onError={() => setError(true)}
+              alt=""
+            />
+            <canvas
+              ref={canvasRef}
+              width={resolution[0]}
+              height={resolution[1]}
+              className="absolute inset-0 w-full h-full pointer-events-none"
+            />
+            {!loaded && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/70">
+                <Loader2 className="w-5 h-5 text-white/40 animate-spin" />
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 gap-1">
+            <p className="text-xs text-gray-400">Stream unavailable</p>
+            {env.ANNOTATED_STREAM === 'true' && (
+              <p className="text-xs text-gray-600">Container not reachable on STREAM_PORT {env.STREAM_PORT ?? '8090'}</p>
+            )}
+          </div>
+        )}
+      </div>
+
+      {detectionMode === 'line_crossing' ? (
+        <div className="flex gap-3">
+          <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2">
+            <ArrowDownToLine className="w-4 h-4 text-green-500" />
+            <span className="text-xs text-muted-foreground">IN today</span>
+            <span className="text-lg font-bold tabular-nums text-green-500">{counts?.in ?? '—'}</span>
+          </div>
+          <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2">
+            <ArrowUpFromLine className="w-4 h-4 text-orange-500" />
+            <span className="text-xs text-muted-foreground">OUT today</span>
+            <span className="text-lg font-bold tabular-nums text-orange-500">{counts?.out ?? '—'}</span>
+          </div>
         </div>
-      )}
-      {error && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/70">
-          <p className="text-xs text-gray-400">Stream unavailable</p>
+      ) : (
+        <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 w-fit">
+          <span className="text-xs text-muted-foreground">Entered today</span>
+          <span className="text-lg font-bold tabular-nums text-blue-500">{counts?.in ?? '—'}</span>
         </div>
       )}
     </div>
