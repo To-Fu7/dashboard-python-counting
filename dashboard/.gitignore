@@ -47,3 +47,11 @@ next-env.d.ts
 CLAUDE.md
 AGENTS.md
 .claude/
+settings.json
+config.json
+claude.md
+WINDOWS-WSL-LIMITATION.md
+docker-compose.yml
+dockerfile-subbranch
+pull_model.sh
+RESAMPLE_DB_IMPL.md

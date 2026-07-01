@@ -308,6 +308,7 @@ STREAM_PORT = int(os.getenv('STREAM_PORT', '8090')) if ANNOTATED_STREAM else 0
 STREAM_JPEG_QUALITY = int(os.getenv('STREAM_JPEG_QUALITY', '50'))
 
 _stream_frame: bytes | None = None
+_stream_frame_id: int = 0  # incremented each time a new frame is pushed
 _stream_lock = threading.Lock()
 _stream_clients = 0  # active MJPEG viewer count
 _stream_clients_lock = threading.Lock()
