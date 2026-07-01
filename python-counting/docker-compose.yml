@@ -1,10 +1,10 @@
 services:
-  services-python-1:
+  services-python-cctv-01:
     image: python-counting-services-python-1:latest
-    container_name: services-python-b1
+    container_name: services-python-cctv-01
     restart: unless-stopped
     env_file:
-      - .env_b1
+      - .env_CCTV_01
     extra_hosts:
       - host.docker.internal:host-gateway
     networks:
@@ -12,16 +12,18 @@ services:
     shm_size: 1gb
     runtime: nvidia
     volumes:
-      - /home/irengi/Documents/Python/epiwalk/v3-dashboard/python-counting:/app
+      - C:\Users\g24.administrator\Documents\developer\python\dashboard-python-counting\python-counting:/app
+      - /usr/lib/wsl/lib:/usr/lib/wsl/lib:ro
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=all
-  services-python-t1:
+      - LD_LIBRARY_PATH=/usr/lib/wsl/lib:/usr/local/cuda/lib64
+  services-python-cctv-02:
     image: python-counting-services-python-1:latest
-    container_name: services-python-t1
+    container_name: services-python-cctv-02
     restart: unless-stopped
     env_file:
-      - .env_T1
+      - .env_CCTV_02
     extra_hosts:
       - host.docker.internal:host-gateway
     networks:
@@ -29,10 +31,317 @@ services:
     shm_size: 1gb
     runtime: nvidia
     volumes:
-      - /home/irengi/Documents/Python/epiwalk/v3-dashboard/python-counting:/app
+      - C:\Users\g24.administrator\Documents\developer\python\dashboard-python-counting\python-counting:/app
+      - /usr/lib/wsl/lib:/usr/lib/wsl/lib:ro
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=all
+      - LD_LIBRARY_PATH=/usr/lib/wsl/lib:/usr/local/cuda/lib64
+  services-python-cctv-03:
+    image: python-counting-services-python-1:latest
+    container_name: services-python-cctv-03
+    restart: unless-stopped
+    env_file:
+      - .env_CCTV_03
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    networks:
+      - envisions
+    shm_size: 1gb
+    runtime: nvidia
+    volumes:
+      - C:\Users\g24.administrator\Documents\developer\python\dashboard-python-counting\python-counting:/app
+      - /usr/lib/wsl/lib:/usr/lib/wsl/lib:ro
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - LD_LIBRARY_PATH=/usr/lib/wsl/lib:/usr/local/cuda/lib64
+  services-python-cctv-04:
+    image: python-counting-services-python-1:latest
+    container_name: services-python-cctv-04
+    restart: unless-stopped
+    env_file:
+      - .env_CCTV_04
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    networks:
+      - envisions
+    shm_size: 1gb
+    runtime: nvidia
+    volumes:
+      - C:\Users\g24.administrator\Documents\developer\python\dashboard-python-counting\python-counting:/app
+      - /usr/lib/wsl/lib:/usr/lib/wsl/lib:ro
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - LD_LIBRARY_PATH=/usr/lib/wsl/lib:/usr/local/cuda/lib64
+  services-python-cctv-05:
+    image: python-counting-services-python-1:latest
+    container_name: services-python-cctv-05
+    restart: unless-stopped
+    env_file:
+      - .env_CCTV_05
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    networks:
+      - envisions
+    shm_size: 1gb
+    runtime: nvidia
+    volumes:
+      - C:\Users\g24.administrator\Documents\developer\python\dashboard-python-counting\python-counting:/app
+      - /usr/lib/wsl/lib:/usr/lib/wsl/lib:ro
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - LD_LIBRARY_PATH=/usr/lib/wsl/lib:/usr/local/cuda/lib64
+  services-python-cctv-06:
+    image: python-counting-services-python-1:latest
+    container_name: services-python-cctv-06
+    restart: unless-stopped
+    env_file:
+      - .env_CCTV_06
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    networks:
+      - envisions
+    shm_size: 1gb
+    runtime: nvidia
+    volumes:
+      - C:\Users\g24.administrator\Documents\developer\python\dashboard-python-counting\python-counting:/app
+      - /usr/lib/wsl/lib:/usr/lib/wsl/lib:ro
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - LD_LIBRARY_PATH=/usr/lib/wsl/lib:/usr/local/cuda/lib64
+  services-python-cctv-07:
+    image: python-counting-services-python-1:latest
+    container_name: services-python-cctv-07
+    restart: unless-stopped
+    env_file:
+      - .env_CCTV_07
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    networks:
+      - envisions
+    shm_size: 1gb
+    runtime: nvidia
+    volumes:
+      - C:\Users\g24.administrator\Documents\developer\python\dashboard-python-counting\python-counting:/app
+      - /usr/lib/wsl/lib:/usr/lib/wsl/lib:ro
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - LD_LIBRARY_PATH=/usr/lib/wsl/lib:/usr/local/cuda/lib64
+  services-python-cctv-08:
+    image: python-counting-services-python-1:latest
+    container_name: services-python-cctv-08
+    restart: unless-stopped
+    env_file:
+      - .env_CCTV_08
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    networks:
+      - envisions
+    shm_size: 1gb
+    runtime: nvidia
+    volumes:
+      - C:\Users\g24.administrator\Documents\developer\python\dashboard-python-counting\python-counting:/app
+      - /usr/lib/wsl/lib:/usr/lib/wsl/lib:ro
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - LD_LIBRARY_PATH=/usr/lib/wsl/lib:/usr/local/cuda/lib64
+  services-python-cctv-09:
+    image: python-counting-services-python-1:latest
+    container_name: services-python-cctv-09
+    restart: unless-stopped
+    env_file:
+      - .env_CCTV_09
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    networks:
+      - envisions
+    shm_size: 1gb
+    runtime: nvidia
+    volumes:
+      - C:\Users\g24.administrator\Documents\developer\python\dashboard-python-counting\python-counting:/app
+      - /usr/lib/wsl/lib:/usr/lib/wsl/lib:ro
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - LD_LIBRARY_PATH=/usr/lib/wsl/lib:/usr/local/cuda/lib64
+  services-python-cctv-10:
+    image: python-counting-services-python-1:latest
+    container_name: services-python-cctv-10
+    restart: unless-stopped
+    env_file:
+      - .env_CCTV_10
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    networks:
+      - envisions
+    shm_size: 1gb
+    runtime: nvidia
+    volumes:
+      - C:\Users\g24.administrator\Documents\developer\python\dashboard-python-counting\python-counting:/app
+      - /usr/lib/wsl/lib:/usr/lib/wsl/lib:ro
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - LD_LIBRARY_PATH=/usr/lib/wsl/lib:/usr/local/cuda/lib64
+  services-python-cctv-11:
+    image: python-counting-services-python-1:latest
+    container_name: services-python-cctv-11
+    restart: unless-stopped
+    env_file:
+      - .env_CCTV_11
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    networks:
+      - envisions
+    shm_size: 1gb
+    runtime: nvidia
+    volumes:
+      - C:\Users\g24.administrator\Documents\developer\python\dashboard-python-counting\python-counting:/app
+      - /usr/lib/wsl/lib:/usr/lib/wsl/lib:ro
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - LD_LIBRARY_PATH=/usr/lib/wsl/lib:/usr/local/cuda/lib64
+  services-python-cctv-12:
+    image: python-counting-services-python-1:latest
+    container_name: services-python-cctv-12
+    restart: unless-stopped
+    env_file:
+      - .env_CCTV_12
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    networks:
+      - envisions
+    shm_size: 1gb
+    runtime: nvidia
+    volumes:
+      - C:\Users\g24.administrator\Documents\developer\python\dashboard-python-counting\python-counting:/app
+      - /usr/lib/wsl/lib:/usr/lib/wsl/lib:ro
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - LD_LIBRARY_PATH=/usr/lib/wsl/lib:/usr/local/cuda/lib64
+  services-python-cctv-13:
+    image: python-counting-services-python-1:latest
+    container_name: services-python-cctv-13
+    restart: unless-stopped
+    env_file:
+      - .env_CCTV_13
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    networks:
+      - envisions
+    shm_size: 1gb
+    runtime: nvidia
+    volumes:
+      - C:\Users\g24.administrator\Documents\developer\python\dashboard-python-counting\python-counting:/app
+      - /usr/lib/wsl/lib:/usr/lib/wsl/lib:ro
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - LD_LIBRARY_PATH=/usr/lib/wsl/lib:/usr/local/cuda/lib64
+  services-python-cctv-14:
+    image: python-counting-services-python-1:latest
+    container_name: services-python-cctv-14
+    restart: unless-stopped
+    env_file:
+      - .env_CCTV_14
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    networks:
+      - envisions
+    shm_size: 1gb
+    runtime: nvidia
+    volumes:
+      - C:\Users\g24.administrator\Documents\developer\python\dashboard-python-counting\python-counting:/app
+      - /usr/lib/wsl/lib:/usr/lib/wsl/lib:ro
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - LD_LIBRARY_PATH=/usr/lib/wsl/lib:/usr/local/cuda/lib64
+  services-python-cctv-15:
+    image: python-counting-services-python-1:latest
+    container_name: services-python-cctv-15
+    restart: unless-stopped
+    env_file:
+      - .env_CCTV_15
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    networks:
+      - envisions
+    shm_size: 1gb
+    runtime: nvidia
+    volumes:
+      - C:\Users\g24.administrator\Documents\developer\python\dashboard-python-counting\python-counting:/app
+      - /usr/lib/wsl/lib:/usr/lib/wsl/lib:ro
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - LD_LIBRARY_PATH=/usr/lib/wsl/lib:/usr/local/cuda/lib64
+  services-python-cctv-16:
+    image: python-counting-services-python-1:latest
+    container_name: services-python-cctv-16
+    restart: unless-stopped
+    env_file:
+      - .env_CCTV_16
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    networks:
+      - envisions
+    shm_size: 1gb
+    runtime: nvidia
+    volumes:
+      - C:\Users\g24.administrator\Documents\developer\python\dashboard-python-counting\python-counting:/app
+      - /usr/lib/wsl/lib:/usr/lib/wsl/lib:ro
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - LD_LIBRARY_PATH=/usr/lib/wsl/lib:/usr/local/cuda/lib64
+  services-python-pb1-cctv-21:
+    image: python-counting-services-python-1:latest
+    container_name: services-python-pb1-cctv-21
+    restart: unless-stopped
+    env_file:
+      - .env_PB1_CCTV_21
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    networks:
+      - envisions
+    shm_size: 1gb
+    runtime: nvidia
+    volumes:
+      - C:\Users\g24.administrator\Documents\developer\python\dashboard-python-counting\python-counting:/app
+      - /usr/lib/wsl/lib:/usr/lib/wsl/lib:ro
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - LD_LIBRARY_PATH=/usr/lib/wsl/lib:/usr/local/cuda/lib64
+  services-python-pb1-cctv-17:
+    image: python-counting-services-python-1:latest
+    container_name: services-python-pb1-cctv-17
+    restart: unless-stopped
+    env_file:
+      - .env_PB1_CCTV_17
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    networks:
+      - envisions
+    shm_size: 1gb
+    runtime: nvidia
+    volumes:
+      - C:\Users\g24.administrator\Documents\developer\python\dashboard-python-counting\python-counting:/app
+      - /usr/lib/wsl/lib:/usr/lib/wsl/lib:ro
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - LD_LIBRARY_PATH=/usr/lib/wsl/lib:/usr/local/cuda/lib64
 networks:
   envisions:
-    driver: bridge
+    external: true
+    name: envisions

@@ -8,7 +8,6 @@ import math
 import numpy as np
 from ultralytics import YOLO
 import cvzone
-import pandas as pd
 import psycopg2
 import time
 import logging
@@ -685,18 +684,36 @@ def initialize_video_capture(video_source):
     logging.info(f'Initializing video capture with source: {video_source}')
 
     if ENABLE_NVDEC:
-        for codec in ('h264_cuvid', 'hevc_cuvid'):
-            os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = f'hwaccel;cuda|video_codec;{codec}|rtsp_transport;tcp'
+        # Give the cuvid decoder a large probe window so it can capture a
+        # keyframe (with SPS/PPS) before opening — RTSP joins mid-stream and
+        # the hardware decoder can't sync without extradata.
+        probe = 'probesize;10000000|analyzeduration;10000000'
+        nvdec_modes = [
+            ('h264_cuvid', f'{probe}|rtsp_transport;tcp|video_codec;h264_cuvid'),
+            ('hevc_cuvid', f'{probe}|rtsp_transport;tcp|video_codec;hevc_cuvid'),
+        ]
+        for label, opts in nvdec_modes:
+            os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = opts
             cap = cv2.VideoCapture(video_source, cv2.CAP_FFMPEG)
             if cap.isOpened():
-                logging.info(f'NVDEC hardware decoding enabled ({codec})')
-                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-                cap.set(cv2.CAP_PROP_FPS, 10)
-                return cap
+                # isOpened() alone is not enough — cuvid often needs a few
+                # frames before the first valid decode. Confirm a real frame.
+                decoded = False
+                for _ in range(60):
+                    ret, frame = cap.read()
+                    if ret and frame is not None:
+                        decoded = True
+                        break
+                if decoded:
+                    logging.info(f'NVDEC hardware decoding enabled ({label})')
+                    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                    cap.set(cv2.CAP_PROP_FPS, 10)
+                    return cap
+                logging.warning(f'NVDEC {label} opened but produced no frame')
             cap.release()
-            logging.warning(f'NVDEC {codec} failed, trying next...')
-        logging.warning('All NVDEC codecs failed, falling back to software decoding')
-        del os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS']
+            logging.warning(f'NVDEC {label} failed, trying next...')
+        logging.warning('All NVDEC modes failed, falling back to software decoding')
+        os.environ.pop('OPENCV_FFMPEG_CAPTURE_OPTIONS', None)
 
     cap = cv2.VideoCapture(video_source, cv2.CAP_FFMPEG)
     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)

@@ -76,7 +76,7 @@ export interface ContainerInfo {
   image: string;
 }
 
-export type HardwareMode = 'jetson' | 'server' | 'cpu';
+export type HardwareMode = 'jetson' | 'server' | 'windows' | 'cpu';
 
 export interface GlobalSettings {
   appName: string;

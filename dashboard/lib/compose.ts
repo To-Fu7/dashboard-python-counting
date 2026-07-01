@@ -127,6 +127,25 @@ function buildServiceDefinition(deviceCode: string, hardwareMode: HardwareMode):
     };
   }
 
+  if (hardwareMode === 'windows') {
+    // Windows + Docker Desktop (WSL2). Same as server, plus the WSL driver
+    // library dir so NVDEC (libnvcuvid.so.1) is available inside the container —
+    // Docker Desktop only injects compute libs (libcuda), not the video codec ones.
+    return {
+      ...base,
+      runtime: 'nvidia',
+      volumes: [
+        `${HOST_PYTHON_COUNTING_DIR}:/app`,
+        '/usr/lib/wsl/lib:/usr/lib/wsl/lib:ro',
+      ],
+      environment: [
+        'NVIDIA_VISIBLE_DEVICES=all',
+        'NVIDIA_DRIVER_CAPABILITIES=all',
+        'LD_LIBRARY_PATH=/usr/lib/wsl/lib:/usr/local/cuda/lib64',
+      ],
+    };
+  }
+
   // cpu mode: no GPU runtime or device mappings
   return {
     ...base,
