@@ -64,3 +64,4 @@ services:
 networks:
   envisions:
     driver: bridge
+    name: envisions  # shared with the dashboard compose — without this, compose prefixes the project name and containers land on an isolated network

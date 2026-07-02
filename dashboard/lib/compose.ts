@@ -45,11 +45,16 @@ interface ComposeFile {
   [key: string]: unknown;
 }
 
+// `name: envisions` is required so the network is shared with the dashboard
+// compose project — without it, compose prefixes the project name
+// (python-counting_envisions) and Triton/cameras land on an isolated network.
+const ENVISIONS_NETWORK = { envisions: { driver: 'bridge', name: 'envisions' } };
+
 export function readCompose(): ComposeFile {
   if (!fs.existsSync(COMPOSE_FILE)) {
     return {
       services: {},
-      networks: { envisions: { driver: 'bridge' } },
+      networks: { ...ENVISIONS_NETWORK },
     };
   }
   const content = fs.readFileSync(COMPOSE_FILE, 'utf-8');
@@ -171,6 +176,8 @@ function ensureTritonServices(compose: ComposeFile, hardwareMode: HardwareMode, 
   compose.services = compose.services || {};
   compose.services[TRITON_SERVICE_NAME] = buildTritonServiceDefinition(hardwareMode, imageTag);
   compose.services[TRITON_BUILDER_SERVICE_NAME] = buildModelBuilderServiceDefinition(hardwareMode, imageTag);
+  // normalize the network definition on older compose files missing `name:`
+  compose.networks = { ...(compose.networks || {}), ...ENVISIONS_NETWORK };
 }
 
 export function addService(deviceCode: string, hardwareMode: HardwareMode = 'jetson', tritonImageTag?: string): void {
@@ -182,7 +189,7 @@ export function addService(deviceCode: string, hardwareMode: HardwareMode = 'jet
   ensureTritonServices(compose, hardwareMode, tritonImageTag);
 
   if (!compose.networks) {
-    compose.networks = { envisions: { driver: 'bridge' } };
+    compose.networks = { ...ENVISIONS_NETWORK };
   }
 
   writeCompose(compose);
