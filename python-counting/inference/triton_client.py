@@ -88,8 +88,7 @@ class TritonYoloClient:
         self.input_shape = tuple(640 if d <= 0 else d for d in hw)
 
         out_dims = [int(d) for d in out["shape"]]
-        out_shape = tuple(out_dims if self._batched_model is False else [1, *out_dims])
-        self.end_to_end = is_end_to_end(out_shape)
+        self.end_to_end = is_end_to_end(tuple(out_dims))
 
         self._client = client
         logging.info(

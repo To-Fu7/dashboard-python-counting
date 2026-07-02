@@ -19,8 +19,10 @@ import numpy as np
 
 
 def is_end_to_end(output_shape: tuple[int, ...]) -> bool:
-    """[batch, max_det, 6] is e2e; [batch, 4+nc, anchors] is a raw head."""
-    return len(output_shape) == 3 and output_shape[-1] == 6
+    """e2e output ends in 6 (x1,y1,x2,y2,conf,cls); a raw head ends in the anchor
+    count (e.g. 8400), never 6. Robust whether or not the batch axis is present —
+    Triton model metadata may report [-1, 300, 6], [300, 6], or [1, 300, 6]."""
+    return output_shape[-1] == 6
 
 
 def nms_numpy(boxes_xyxy: np.ndarray, scores: np.ndarray, iou_thresh: float) -> np.ndarray:
