@@ -272,8 +272,10 @@ export async function composeUpAll(): Promise<void> {
 }
 
 export async function composeBuild(): Promise<{ stdout: string; stderr: string }> {
+  // Camera services reference a prebuilt image (no build: section), so
+  // `compose build` is a no-op — build the image directly from the dockerfile.
   return execAsync(
-    `${COMPOSE_CMD} build`,
+    `docker build -t python-counting-services-python-1:latest -f dockerfile .`,
     { cwd: PYTHON_COUNTING_DIR, timeout: 600000 }
   );
 }

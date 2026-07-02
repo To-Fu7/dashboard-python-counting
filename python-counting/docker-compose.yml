@@ -1,3 +1,5 @@
+# Camera services are generated per-device by the dashboard (lib/compose.ts).
+# This file ships only the shared inference stack.
 services:
   triton:
     image: nvcr.io/nvidia/tritonserver:24.08-py3
@@ -29,38 +31,6 @@ services:
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=all
-  services-python-1:
-    image: python-counting-services-python-1:latest
-    container_name: services-python-b1
-    restart: unless-stopped
-    env_file:
-      - .env_b1
-    extra_hosts:
-      - host.docker.internal:host-gateway
-    networks:
-      - envisions
-    depends_on:
-      - triton
-    volumes:
-      - /home/irengi/Documents/Python/epiwalk/v3-dashboard/python-counting:/app
-    environment:
-      - TRITON_URL=triton:8001
-  services-python-t1:
-    image: python-counting-services-python-1:latest
-    container_name: services-python-t1
-    restart: unless-stopped
-    env_file:
-      - .env_T1
-    extra_hosts:
-      - host.docker.internal:host-gateway
-    networks:
-      - envisions
-    depends_on:
-      - triton
-    volumes:
-      - /home/irengi/Documents/Python/epiwalk/v3-dashboard/python-counting:/app
-    environment:
-      - TRITON_URL=triton:8001
 networks:
   envisions:
     driver: bridge
