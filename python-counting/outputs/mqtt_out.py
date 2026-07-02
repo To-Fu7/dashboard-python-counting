@@ -97,6 +97,8 @@ def send_interval_mqtt_data():
 
     if mqtt_client is None:
         logging.warning("MQTT client not initialized, skipping interval data")
+        # mark as sent so this fires once per interval, not on every frame
+        state.last_mqtt_send = datetime.datetime.now(cfg.local_tz)
         return
 
     # Guard against rapid re-entry (multiple frames triggering in the same tick)
