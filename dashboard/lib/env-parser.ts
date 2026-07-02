@@ -34,10 +34,22 @@ export function parseEnvFile(filePath: string): DeviceEnvConfig {
   return config as DeviceEnvConfig;
 }
 
+/** Legacy .env migration: derive the Triton model repo name from a YOLO_MODEL
+ *  weights filename, e.g. 'yolo26m.pt' -> 'yolo26m_640'. */
+export function deriveTritonModel(yoloModel: string | undefined, imgsz = 640): string {
+  const stem = (yoloModel || 'yolo11n.pt').replace(/\.[^.]+$/, '');
+  return `${stem}_${imgsz}`;
+}
+
 export function readDeviceEnv(deviceCode: string): DeviceEnvConfig | null {
   const filePath = getEnvFilePath(deviceCode);
   if (!fs.existsSync(filePath)) return null;
-  return parseEnvFile(filePath);
+  const config = parseEnvFile(filePath);
+  // Migration shim: envs written before the Triton migration have YOLO_MODEL only
+  if (!config.TRITON_MODEL && config.YOLO_MODEL) {
+    config.TRITON_MODEL = deriveTritonModel(config.YOLO_MODEL);
+  }
+  return config;
 }
 
 export function writeDeviceEnv(deviceCode: string, config: Partial<DeviceEnvConfig>): void {
@@ -79,10 +91,10 @@ export function writeDeviceEnv(deviceCode: string, config: Partial<DeviceEnvConf
     `ANNOTATED_STREAM=${config.ANNOTATED_STREAM ?? 'false'}`,
     `STREAM_PORT=${config.STREAM_PORT ?? '8090'}`,
     '',
-    '# YOLO',
-    `YOLO_MODEL=${config.YOLO_MODEL ?? 'yolo11n.pt'}`,
+    '# INFERENCE (Triton)',
+    `TRITON_MODEL=${config.TRITON_MODEL ?? deriveTritonModel(config.YOLO_MODEL)}`,
     `YOLO_CONFIDENCE=${config.YOLO_CONFIDENCE ?? '0.3'}`,
-    `ENABLE_NVDEC=${config.ENABLE_NVDEC ?? 'false'}`,
+    `YOLO_IOU=${config.YOLO_IOU ?? '0.3'}`,
     `JPEG_QUALITY=${config.JPEG_QUALITY ?? '40'}`,
     `FPS_LIMIT=${config.FPS_LIMIT ?? '0'}`,
     `FRAME_SKIP=${config.FRAME_SKIP ?? '2'}`,

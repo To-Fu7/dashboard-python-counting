@@ -1,0 +1,11 @@
+# One-shot ONNX export image — the ONLY image that contains ultralytics/torch.
+#
+# Build:  docker build -f tools/Dockerfile.export -t yolo-export tools/
+# Run:    docker run --rm -v $(pwd):/work yolo-export \
+#           --weights /work/yolo26m.pt --imgsz 640 --out-dir /work/models
+FROM ultralytics/ultralytics:latest
+
+WORKDIR /export
+COPY export_model.py .
+
+ENTRYPOINT ["python", "export_model.py"]

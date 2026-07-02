@@ -124,6 +124,8 @@ export default function HomePage() {
 
       <SystemStats />
 
+      <TritonStatusCard />
+
       {imageReady === false && (
         <div className="rounded-lg border border-yellow-500/40 bg-yellow-500/10 p-4 flex items-start gap-3">
           <AlertCircle className="w-5 h-5 text-yellow-500 shrink-0 mt-0.5" />
@@ -167,6 +169,89 @@ export default function HomePage() {
             onAction={containerAction}
           />
         ))}
+      </div>
+    </div>
+  );
+}
+
+interface TritonStatusData {
+  containerStatus: string;
+  reachable: boolean;
+  ready: boolean;
+  models: { name: string; state?: string }[];
+  metrics: { requestSuccess: number; requestFailure: number } | null;
+}
+
+function TritonStatusCard() {
+  const [status, setStatus] = useState<TritonStatusData | null>(null);
+  const [acting, setActing] = useState('');
+
+  const poll = () => {
+    fetch('/api/triton/status')
+      .then(r => r.json())
+      .then(setStatus)
+      .catch(() => {});
+  };
+
+  useEffect(() => {
+    poll();
+    const id = setInterval(poll, 5000);
+    return () => clearInterval(id);
+  }, []);
+
+  async function action(name: string) {
+    setActing(name);
+    try {
+      const res = await fetch(`/api/triton/${name}`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      poll();
+    } catch (e) {
+      alert(`Triton ${name} failed: ${e}`);
+    } finally {
+      setActing('');
+    }
+  }
+
+  const ready = status?.ready === true;
+  const down = status !== null && !ready;
+  const readyModels = status?.models.filter(m => m.state === 'READY').length ?? 0;
+
+  return (
+    <div className={`rounded-lg border p-3 flex items-center justify-between gap-4 ${
+      down ? 'border-red-500/50 bg-red-500/10' : 'border-border bg-card'
+    }`}>
+      <div className="flex items-center gap-3 min-w-0">
+        <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${ready ? 'bg-emerald-500' : 'bg-red-500 animate-pulse'}`} />
+        <div className="min-w-0">
+          <p className="text-sm font-medium">
+            Triton Inference Server
+            <span className="ml-2 text-xs text-muted-foreground">
+              {status === null ? '—' : ready ? `ready · ${readyModels} model${readyModels === 1 ? '' : 's'} loaded` : `container ${status.containerStatus} — cameras run degraded until Triton is up`}
+            </span>
+          </p>
+          {ready && status?.metrics && (
+            <p className="text-[10px] text-muted-foreground tabular-nums">
+              {status.metrics.requestSuccess.toLocaleString()} inferences · {status.metrics.requestFailure.toLocaleString()} failures
+            </p>
+          )}
+        </div>
+      </div>
+      <div className="flex gap-2 shrink-0">
+        {!ready && (
+          <Button size="sm" variant="outline" onClick={() => action('start')} disabled={!!acting}>
+            {acting === 'start' ? 'Starting…' : 'Start'}
+          </Button>
+        )}
+        {ready && (
+          <Button size="sm" variant="outline" onClick={() => action('restart')} disabled={!!acting}>
+            {acting === 'restart' ? 'Restarting…' : 'Restart'}
+          </Button>
+        )}
+        <Button size="sm" variant="outline" onClick={() => action('build-engines')} disabled={!!acting}
+          title="Build TensorRT engines for all ONNX models on this device (minutes)">
+          {acting === 'build-engines' ? 'Building…' : 'Build Engines'}
+        </Button>
       </div>
     </div>
   );

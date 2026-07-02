@@ -16,10 +16,17 @@ export async function PUT(request: Request) {
     const prev = readSettings();
     const body = await request.json();
     writeSettings(body);
-    if (body.hardwareMode && body.hardwareMode !== prev.hardwareMode) {
-      applyHardwareModeToAll(body.hardwareMode);
+    const modeChanged = body.hardwareMode && body.hardwareMode !== prev.hardwareMode;
+    const tritonTagChanged = body.triton?.imageTag && body.triton.imageTag !== prev.triton.imageTag;
+    if (modeChanged || tritonTagChanged) {
+      // regenerates every camera service AND the triton/model-builder services
+      applyHardwareModeToAll(body.hardwareMode ?? prev.hardwareMode, body.triton?.imageTag);
     }
-    return NextResponse.json({ success: true });
+    return NextResponse.json({
+      success: true,
+      // jetson/server engines are TRT-version-specific — prompt a rebuild in the UI
+      engineRebuildRecommended: Boolean(modeChanged || tritonTagChanged),
+    });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });
   }

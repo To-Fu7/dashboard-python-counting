@@ -19,6 +19,11 @@ interface ComposeService {
   container_name?: string;
   restart?: string;
   runtime?: string;
+  command?: string;
+  entrypoint?: string[];
+  profiles?: string[];
+  ports?: string[];
+  depends_on?: string[];
   env_file?: string[];
   volumes?: string[];
   devices?: string[];
@@ -28,6 +33,11 @@ interface ComposeService {
   environment?: string[];
   deploy?: unknown;
 }
+
+export const TRITON_SERVICE_NAME = 'triton';
+export const TRITON_BUILDER_SERVICE_NAME = 'triton-model-builder';
+export const TRITON_CONTAINER_NAME = 'triton-inference-server';
+export const DEFAULT_TRITON_IMAGE_TAG = '24.08';
 
 interface ComposeFile {
   services: Record<string, ComposeService>;
@@ -77,69 +87,99 @@ export function listServices(): { serviceName: string; deviceCode: string; envFi
   return results;
 }
 
-function buildServiceDefinition(deviceCode: string, hardwareMode: HardwareMode): ComposeService {
+// Camera containers are thin Triton clients since the Triton migration: CPU-only
+// in every hardware mode. GPU access (runtime/devices) now lives on the triton
+// service, which the hardware mode configures instead.
+function buildServiceDefinition(deviceCode: string, _hardwareMode: HardwareMode): ComposeService {
   const containerName = getContainerName(deviceCode);
-  const base: ComposeService = {
+  return {
     image: 'python-counting-services-python-1:latest',
     container_name: containerName,
     restart: 'unless-stopped',
     env_file: [`.env_${deviceCode}`],
     extra_hosts: ['host.docker.internal:host-gateway'],
     networks: ['envisions'],
-    shm_size: '1gb',
-  };
-
-  if (hardwareMode === 'jetson') {
-    return {
-      ...base,
-      volumes: [
-        `${HOST_PYTHON_COUNTING_DIR}:/app`,
-        '/usr/lib/aarch64-linux-gnu/tegra:/usr/lib/aarch64-linux-gnu/tegra',
-        '/usr/lib/aarch64-linux-gnu/tegra-egl:/usr/lib/aarch64-linux-gnu/tegra-egl',
-      ],
-      devices: [
-        '/dev/nvhost-gpu',
-        '/dev/nvhost-ctrl',
-        '/dev/nvhost-ctrl-gpu',
-        '/dev/nvhost-as-gpu',
-        '/dev/nvmap',
-        '/dev/nvidiactl',
-        '/dev/nvhost-vic',
-        '/dev/nvhost-nvdec',
-      ],
-      environment: [
-        'NVIDIA_VISIBLE_DEVICES=all',
-        'NVIDIA_DRIVER_CAPABILITIES=all',
-        'LD_LIBRARY_PATH=/usr/lib/aarch64-linux-gnu/tegra:/usr/lib/aarch64-linux-gnu/tegra-egl',
-      ],
-    };
-  }
-
-  if (hardwareMode === 'server') {
-    return {
-      ...base,
-      runtime: 'nvidia',
-      volumes: [`${HOST_PYTHON_COUNTING_DIR}:/app`],
-      environment: [
-        'NVIDIA_VISIBLE_DEVICES=all',
-        'NVIDIA_DRIVER_CAPABILITIES=all',
-      ],
-    };
-  }
-
-  // cpu mode: no GPU runtime or device mappings
-  return {
-    ...base,
+    depends_on: [TRITON_SERVICE_NAME],
     volumes: [`${HOST_PYTHON_COUNTING_DIR}:/app`],
+    environment: [`TRITON_URL=${TRITON_SERVICE_NAME}:8001`],
   };
 }
 
-export function addService(deviceCode: string, hardwareMode: HardwareMode = 'jetson'): void {
+export function tritonImageForMode(hardwareMode: HardwareMode, imageTag: string = DEFAULT_TRITON_IMAGE_TAG): string {
+  const suffix = hardwareMode === 'jetson' ? '-py3-igpu' : '-py3';
+  return `nvcr.io/nvidia/tritonserver:${imageTag}${suffix}`;
+}
+
+export function buildTritonServiceDefinition(
+  hardwareMode: HardwareMode,
+  imageTag: string = DEFAULT_TRITON_IMAGE_TAG
+): ComposeService {
+  const base: ComposeService = {
+    image: tritonImageForMode(hardwareMode, imageTag),
+    container_name: TRITON_CONTAINER_NAME,
+    restart: 'unless-stopped',
+    command: 'tritonserver --model-repository=/models --strict-model-config=false',
+    shm_size: '1gb',
+    ports: ['8000:8000', '8001:8001', '8002:8002'],
+    volumes: [`${HOST_PYTHON_COUNTING_DIR}/models:/models`],
+    networks: ['envisions'],
+  };
+
+  // cpu mode: standard image, onnxruntime-CPU models only — no GPU runtime
+  if (hardwareMode === 'cpu') return base;
+
+  return {
+    ...base,
+    runtime: 'nvidia',
+    environment: [
+      'NVIDIA_VISIBLE_DEVICES=all',
+      'NVIDIA_DRIVER_CAPABILITIES=all',
+    ],
+  };
+}
+
+export function buildModelBuilderServiceDefinition(
+  hardwareMode: HardwareMode,
+  imageTag: string = DEFAULT_TRITON_IMAGE_TAG
+): ComposeService {
+  const base: ComposeService = {
+    image: tritonImageForMode(hardwareMode, imageTag),
+    container_name: TRITON_BUILDER_SERVICE_NAME,
+    profiles: ['build'],
+    entrypoint: ['/bin/bash', '/tools/build_engine.sh'],
+    volumes: [
+      `${HOST_PYTHON_COUNTING_DIR}/models:/models`,
+      `${HOST_PYTHON_COUNTING_DIR}/tools:/tools:ro`,
+    ],
+  };
+
+  if (hardwareMode === 'cpu') {
+    return { ...base, environment: ['TRT_BACKEND=onnx'] };
+  }
+
+  return {
+    ...base,
+    runtime: 'nvidia',
+    environment: [
+      'NVIDIA_VISIBLE_DEVICES=all',
+      'NVIDIA_DRIVER_CAPABILITIES=all',
+    ],
+  };
+}
+
+function ensureTritonServices(compose: ComposeFile, hardwareMode: HardwareMode, imageTag?: string): void {
+  compose.services = compose.services || {};
+  compose.services[TRITON_SERVICE_NAME] = buildTritonServiceDefinition(hardwareMode, imageTag);
+  compose.services[TRITON_BUILDER_SERVICE_NAME] = buildModelBuilderServiceDefinition(hardwareMode, imageTag);
+}
+
+export function addService(deviceCode: string, hardwareMode: HardwareMode = 'jetson', tritonImageTag?: string): void {
   const compose = readCompose();
   const serviceName = getServiceName(deviceCode);
 
   compose.services = compose.services || {};
   compose.services[serviceName] = buildServiceDefinition(deviceCode, hardwareMode);
+  ensureTritonServices(compose, hardwareMode, tritonImageTag);
 
   if (!compose.networks) {
     compose.networks = { envisions: { driver: 'bridge' } };
@@ -148,7 +188,7 @@ export function addService(deviceCode: string, hardwareMode: HardwareMode = 'jet
   writeCompose(compose);
 }
 
-export function applyHardwareModeToAll(hardwareMode: HardwareMode): void {
+export function applyHardwareModeToAll(hardwareMode: HardwareMode, tritonImageTag?: string): void {
   const compose = readCompose();
   if (!compose.services) return;
 
@@ -159,6 +199,7 @@ export function applyHardwareModeToAll(hardwareMode: HardwareMode): void {
     const deviceCode = envFile.replace('.env_', '');
     compose.services[serviceName] = buildServiceDefinition(deviceCode, hardwareMode);
   }
+  ensureTritonServices(compose, hardwareMode, tritonImageTag);
 
   writeCompose(compose);
 }
@@ -227,6 +268,37 @@ export async function composeBuild(): Promise<{ stdout: string; stderr: string }
   return execAsync(
     `${COMPOSE_CMD} build`,
     { cwd: PYTHON_COUNTING_DIR, timeout: 600000 }
+  );
+}
+
+export async function composeUpTriton(): Promise<void> {
+  const { stderr } = await execAsync(
+    `${COMPOSE_CMD} up -d --no-deps ${TRITON_SERVICE_NAME}`,
+    { cwd: PYTHON_COUNTING_DIR, timeout: 300000 } // image pull can take a while
+  );
+  if (stderr && /error/i.test(stderr) && !/pulling|creating|starting|created|started/i.test(stderr)) {
+    throw new Error(stderr.trim());
+  }
+}
+
+export async function composeStopTriton(): Promise<void> {
+  await execAsync(
+    `${COMPOSE_CMD} stop ${TRITON_SERVICE_NAME}`,
+    { cwd: PYTHON_COUNTING_DIR, timeout: 60000 }
+  );
+}
+
+export async function composeRestartTriton(): Promise<void> {
+  await composeStopTriton();
+  await composeUpTriton();
+}
+
+export async function runModelBuilder(force = false): Promise<{ stdout: string; stderr: string }> {
+  const forceEnv = force ? '-e FORCE_BUILD=1 ' : '';
+  // TensorRT engine builds can take minutes per model
+  return execAsync(
+    `${COMPOSE_CMD} --profile build run --rm ${forceEnv}${TRITON_BUILDER_SERVICE_NAME}`,
+    { cwd: PYTHON_COUNTING_DIR, timeout: 1800000 }
   );
 }
 

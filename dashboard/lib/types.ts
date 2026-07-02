@@ -19,9 +19,11 @@ export interface DeviceEnvConfig {
   CROP_AREA?: string;         // '[(x1,y1),(x2,y2)]' top-left → bottom-right
   ANNOTATED_STREAM?: string;  // 'true' = serve annotated MJPEG with bboxes on device detail page
   STREAM_PORT?: string;       // annotated MJPEG port (default 8090)
-  YOLO_MODEL: string;
+  TRITON_MODEL?: string;      // Triton model repository name (e.g. yolo26m_640)
+  YOLO_IOU?: string;          // NMS IoU (raw-output fallback path only)
+  YOLO_MODEL?: string;        // legacy (pre-Triton); used to derive TRITON_MODEL
   YOLO_CONFIDENCE: string;
-  ENABLE_NVDEC: string;
+  ENABLE_NVDEC?: string;      // legacy (pre-Triton); ignored by the thin client
   JPEG_QUALITY: string;
   FPS_LIMIT: string;
   FRAME_SKIP: string;
@@ -78,9 +80,15 @@ export interface ContainerInfo {
 
 export type HardwareMode = 'jetson' | 'server' | 'cpu';
 
+export interface TritonSettings {
+  imageTag: string;       // tritonserver release, e.g. '24.08' (suffix -py3/-py3-igpu is derived from hardware mode)
+  defaultModel: string;   // model repository name used for new devices, e.g. 'yolo26m_640'
+}
+
 export interface GlobalSettings {
   appName: string;
   hardwareMode: HardwareMode;
+  triton: TritonSettings;
   pg: {
     host: string;
     port: string;
@@ -98,9 +106,7 @@ export interface GlobalSettings {
     debug_mode: string;
     mqtt_interval_minutes: string;
     daily_send_time: string;
-    yolo_model: string;
     yolo_confidence: string;
-    enable_nvdec: string;
     jpeg_quality: string;
     fps_limit: string;
     frame_skip: string;
@@ -110,6 +116,10 @@ export interface GlobalSettings {
 export const DEFAULT_SETTINGS: GlobalSettings = {
   appName: 'EPiWalk',
   hardwareMode: 'jetson',
+  triton: {
+    imageTag: '24.08',
+    defaultModel: 'yolo26m_640',
+  },
   pg: {
     host: 'host.docker.internal',
     port: '5432',
@@ -127,9 +137,7 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
     debug_mode: 'false',
     mqtt_interval_minutes: '5',
     daily_send_time: '23:59',
-    yolo_model: 'yolo11n.pt',
     yolo_confidence: '0.3',
-    enable_nvdec: 'false',
     jpeg_quality: '40',
     fps_limit: '0',
     frame_skip: '2',

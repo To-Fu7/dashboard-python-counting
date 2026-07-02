@@ -31,6 +31,9 @@ export default function SettingsPage() {
   function setDefault(key: keyof GlobalSettings['defaults'], value: string) {
     setSettings(prev => ({ ...prev, defaults: { ...prev.defaults, [key]: value } }));
   }
+  function setTriton(key: keyof GlobalSettings['triton'], value: string) {
+    setSettings(prev => ({ ...prev, triton: { ...prev.triton, [key]: value } }));
+  }
 
   async function handleSave() {
     setSaving(true);
@@ -42,6 +45,9 @@ export default function SettingsPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
+      if (data.engineRebuildRecommended) {
+        toast.warning('Hardware mode / Triton image changed — rebuild TensorRT engines and restart Triton from the dashboard.');
+      }
       toast.success('Settings saved. New cameras will use these defaults.');
     } catch (e) {
       toast.error(`Failed to save: ${e}`);
@@ -87,9 +93,35 @@ export default function SettingsPage() {
             ))}
           </div>
           <p className="text-xs text-muted-foreground mt-1.5">
-            Changing this updates the Docker Compose template for all existing and new cameras.
+            Changing this updates the Docker Compose template for all existing and new cameras,
+            including the Triton Inference Server service (jetson uses the -igpu image; cpu uses onnxruntime).
           </p>
         </FormField>
+      </Section>
+
+      <Section title="Triton Inference Server">
+        <div className="grid grid-cols-2 gap-4">
+          <FormField label="Triton Image Tag">
+            <Input
+              value={settings.triton.imageTag}
+              onChange={e => setTriton('imageTag', e.target.value)}
+              placeholder="24.08"
+            />
+            <p className="text-xs text-muted-foreground">
+              tritonserver release (e.g. 24.08). On Jetson this must match the device&apos;s JetPack — see models/README.md.
+            </p>
+          </FormField>
+          <FormField label="Default Model">
+            <Input
+              value={settings.triton.defaultModel}
+              onChange={e => setTriton('defaultModel', e.target.value)}
+              placeholder="yolo26m_640"
+            />
+            <p className="text-xs text-muted-foreground">
+              Model repository name assigned to newly created cameras.
+            </p>
+          </FormField>
+        </div>
       </Section>
 
       <Section title="PostgreSQL Database">
@@ -131,9 +163,6 @@ export default function SettingsPage() {
 
       <Section title="Detection Defaults">
         <div className="grid grid-cols-2 gap-4">
-          <FormField label="YOLO Model">
-            <Input value={settings.defaults.yolo_model} onChange={e => setDefault('yolo_model', e.target.value)} placeholder="yolo11n.pt" />
-          </FormField>
           <FormField label="YOLO Confidence">
             <Input type="number" step="0.05" min="0" max="1" value={settings.defaults.yolo_confidence} onChange={e => setDefault('yolo_confidence', e.target.value)} />
           </FormField>
@@ -151,17 +180,6 @@ export default function SettingsPage() {
           </FormField>
           <FormField label="Daily Send Time">
             <Input value={settings.defaults.daily_send_time} onChange={e => setDefault('daily_send_time', e.target.value)} placeholder="23:59" />
-          </FormField>
-          <FormField label="NVDEC (GPU Hardware Decoding)">
-            <div className="flex items-center gap-2 pt-2">
-              <Switch
-                checked={settings.defaults.enable_nvdec === 'true'}
-                onCheckedChange={v => setDefault('enable_nvdec', v ? 'true' : 'false')}
-              />
-              <span className="text-sm text-muted-foreground">
-                {settings.defaults.enable_nvdec === 'true' ? 'Enabled' : 'Disabled'}
-              </span>
-            </div>
           </FormField>
           <FormField label="Debug Mode">
             <div className="flex items-center gap-2 pt-2">

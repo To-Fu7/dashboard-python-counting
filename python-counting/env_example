@@ -1,4 +1,4 @@
-# DEVICE INFO 
+# DEVICE INFO
 DEVICE_ID = 'bd297e8d-9b86-4ba9-a6d2-147a623767e6' # UUID
 DEVICE_NAME = 'CCTV B2 SELATAN'
 DEVICE_CODE = 'CCTV_EPW_B2S' # CODE
@@ -28,16 +28,26 @@ DEBUG_MODE = 'false'
 
 # VIDEO STREAM URL
 RTSP_URL='rtsp://admin:Password@192.168.100.34/Streaming/Channels/501' # RTSP URL, mp4 video path, or 0 for videocam
-# OPENCV_FFMPEG_CAPTURE_OPTIONS=rtsp_transport;tcp|stimeout;5000000|max_delay;5000000|rw_timeout;5000000|fflags;nobuffer|flags;low_delay|reorder_queue_size;0
 # 800 x 600
 # 1024 x 768
 # 1280 x 720
 # 1920 x 1080
 SCREEN_RESOLUTION= [800, 600]
-DETECTION_MARGIN= 30
-YOLO_MODEL= "yolo26m.pt"
+
+# TRITON INFERENCE SERVER (shared across all cameras)
+# TRITON_URL is injected by docker-compose (triton:8001); override here if needed.
+# TRITON_MODEL = model repository name, see models/ (e.g. yolo26m_640, yolo11n_640)
+TRITON_MODEL = 'yolo26m_640'
 YOLO_CONFIDENCE = '0.3'
-ENABLE_NVDEC = 'true'
+# NMS IoU threshold (only used when the model is a raw-output export without embedded NMS)
+YOLO_IOU = '0.3'
+
+# DEPRECATED (ignored since the Triton migration; kept for reference):
+# YOLO_MODEL= "yolo26m.pt"     -> replaced by TRITON_MODEL
+# YOLO_IMGSZ = 640             -> read from Triton model metadata
+# ENABLE_NVDEC = 'true'        -> slim client image decodes in software
+# YOLO_DEVICE = 'auto'         -> inference device is the Triton server's concern
+
 JPEG_QUALITY = 40
 
 FPS_LIMIT = 25
@@ -54,7 +64,7 @@ OFFSET_AMOUNT= 5
 # "X" for point on the left and right line or "Y" for point on the up and bottom line
 POINT_AXIS= 'Y'
 
-MERGE_GATES = 'true
+MERGE_GATES = 'true'
 
 # SWAP IN/OUT DIRECTION
 # 'false' = Cross OUT line first, then IN line to count IN (default)
@@ -72,8 +82,11 @@ LINE_OFFSET_AMOUNT = 5
 
 # INCREMENTAL LINE
 # LINE IS DOUBLED, SO IT WILL JUMP FROM A TO C TO E SO On
-# FUNCTION IS THERE IS ALREADY A SYSTEM ON THE MAIN SCRIPT TO DUPLICATE THE LINE TO MAKE IT DOUBLE 
+# FUNCTION IS THERE IS ALREADY A SYSTEM ON THE MAIN SCRIPT TO DUPLICATE THE LINE TO MAKE IT DOUBLE
 lineA= [(351, 51), (381, 207)]
 lineC= [(381, 207), (613, 240)]
 lineE= [(613, 240), (792, 163)]
 
+# ANNOTATED STREAM (MJPEG on STREAM_PORT, consumed by the dashboard)
+# ANNOTATED_STREAM = 'true'
+# STREAM_PORT = 8090

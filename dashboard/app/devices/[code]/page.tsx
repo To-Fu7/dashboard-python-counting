@@ -113,6 +113,14 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
   const [lines, setLines] = useState<DrawnLine[]>([]);
   const [zones, setZones] = useState<DrawnZone[]>([]);
   const [cropRect, setCropRect] = useState<CropRect | null>(null);
+  const [tritonModels, setTritonModels] = useState<{ name: string; state: string }[]>([]);
+
+  useEffect(() => {
+    fetch('/api/triton/models')
+      .then(r => r.json())
+      .then(d => { if (d.models) setTritonModels(d.models); })
+      .catch(() => { /* Triton model list unavailable — keep free-text fallback */ });
+  }, []);
 
   const fetchDevice = useCallback(async () => {
     try {
@@ -331,25 +339,33 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
             </div>
           </Section>
 
-          <Section title="YOLO Model">
+          <Section title="Detection Model (Triton)">
             <div className="grid grid-cols-2 gap-4">
-              <FormField label="Model File">
-                <Input value={env.YOLO_MODEL || 'yolo11n.pt'} onChange={e => setField('YOLO_MODEL', e.target.value)} />
+              <FormField label="Triton Model">
+                {tritonModels.length > 0 ? (
+                  <Select value={env.TRITON_MODEL || ''} onValueChange={v => v && setField('TRITON_MODEL', v)}>
+                    <SelectTrigger><SelectValue placeholder="Select a model" /></SelectTrigger>
+                    <SelectContent>
+                      {tritonModels.map(m => (
+                        <SelectItem key={m.name} value={m.name}>
+                          {m.name} {m.state === 'READY' ? '● ready' : m.state === 'OFFLINE' ? '○ triton offline' : `(${m.state.toLowerCase()})`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    value={env.TRITON_MODEL || ''}
+                    onChange={e => setField('TRITON_MODEL', e.target.value)}
+                    placeholder="yolo26m_640 (Triton model repository name)"
+                  />
+                )}
               </FormField>
               <FormField label="Confidence (0.0–1.0)">
                 <Input type="number" step="0.05" min="0" max="1" value={env.YOLO_CONFIDENCE || '0.3'} onChange={e => setField('YOLO_CONFIDENCE', e.target.value)} />
               </FormField>
               <FormField label="Outbound JPEG Quality (1–100)">
                 <Input type="number" min="1" max="100" value={env.JPEG_QUALITY || '40'} onChange={e => setField('JPEG_QUALITY', e.target.value)} />
-              </FormField>
-              <FormField label="NVDEC (GPU Hardware Decoding)">
-                <div className="flex items-center gap-2 pt-2">
-                  <Switch
-                    checked={env.ENABLE_NVDEC === 'true'}
-                    onCheckedChange={v => setField('ENABLE_NVDEC', v ? 'true' : 'false')}
-                  />
-                  <span className="text-sm text-muted-foreground">{env.ENABLE_NVDEC === 'true' ? 'Enabled' : 'Disabled'}</span>
-                </div>
               </FormField>
               <FormField label="Annotated Stream (Bounding Box)">
                 <div className="flex items-center gap-2 pt-2">

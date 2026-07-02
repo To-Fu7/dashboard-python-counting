@@ -93,9 +93,8 @@ export async function POST(request: Request) {
       RTSP_URL: rtspUrl || '',
       DEBUG_MODE: settings.defaults.debug_mode,
       SCREEN_RESOLUTION: '[800, 600]',
-      YOLO_MODEL: settings.defaults.yolo_model,
+      TRITON_MODEL: settings.triton.defaultModel,
       YOLO_CONFIDENCE: settings.defaults.yolo_confidence,
-      ENABLE_NVDEC: settings.defaults.enable_nvdec,
       ANNOTATED_STREAM: 'false',
       JPEG_QUALITY: settings.defaults.jpeg_quality,
       FPS_LIMIT: settings.defaults.fps_limit,
@@ -112,7 +111,7 @@ export async function POST(request: Request) {
       lineA: '[(100, 300), (700, 300)]',
     });
 
-    addService(deviceCode, settings.hardwareMode);
+    addService(deviceCode, settings.hardwareMode, settings.triton.imageTag);
 
     return NextResponse.json({ success: true, deviceCode, deviceId }, { status: 201 });
   } catch (e) {

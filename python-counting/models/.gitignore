@@ -1,0 +1,3 @@
+# TensorRT engines are device-specific — always built on the target device
+*.plan
+*.engine
