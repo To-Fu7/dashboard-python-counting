@@ -56,7 +56,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { deviceCode, deviceName, activityTopic, intervalTopic, rtspUrl } = body;
+    const { deviceCode, deviceName, rtspUrl } = body;
 
     if (!deviceCode || !deviceName) {
       return NextResponse.json({ error: 'deviceCode and deviceName are required' }, { status: 400 });
@@ -86,8 +86,8 @@ export async function POST(request: Request) {
       MQTT_PORT: settings.mqtt.port,
       MQTT_USERNAME: settings.mqtt.username,
       MQTT_PASSWORD: settings.mqtt.password,
-      MQTT_TOPIC: activityTopic || '/person_in',
-      MQTT_INTERVAL_TOPIC: intervalTopic || '',
+      MQTT_TOPIC: settings.mqtt.activityTopicTemplate.replace(/\{code\}/g, deviceCode),
+      MQTT_INTERVAL_TOPIC: settings.mqtt.intervalTopicTemplate.replace(/\{code\}/g, deviceCode),
       MQTT_INTERVAL_MINUTES: settings.defaults.mqtt_interval_minutes,
       DAILY_SEND_TIME: settings.defaults.daily_send_time,
       RTSP_URL: rtspUrl || '',
