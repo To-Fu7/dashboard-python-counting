@@ -396,6 +396,106 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
             </div>
           </Section>
 
+          <Section title="Additional Detection">
+            <div className="space-y-5">
+              <div className="space-y-3 rounded-md border border-border p-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">APD (PPE Violation) Detection</span>
+                  <Switch
+                    checked={env.APD_ENABLED === 'true'}
+                    onCheckedChange={v => setField('APD_ENABLED', v ? 'true' : 'false')}
+                  />
+                </div>
+                {env.APD_ENABLED === 'true' && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField label="Model">
+                      {tritonModels.length > 0 ? (
+                        <Select value={env.APD_MODEL || ''} onValueChange={v => v && setField('APD_MODEL', v)}>
+                          <SelectTrigger><SelectValue placeholder="Select a model" /></SelectTrigger>
+                          <SelectContent>
+                            {tritonModels.map(m => (
+                              <SelectItem key={m.name} value={m.name}>
+                                {m.name} {m.state === 'READY' ? '● ready' : m.state === 'OFFLINE' ? '○ triton offline' : `(${m.state.toLowerCase()})`}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Input value={env.APD_MODEL || ''} onChange={e => setField('APD_MODEL', e.target.value)} placeholder="apd_640" />
+                      )}
+                    </FormField>
+                    <FormField label="Confidence (0.0–1.0)">
+                      <Input type="number" step="0.05" min="0" max="1" value={env.APD_CONFIDENCE || '0.3'} onChange={e => setField('APD_CONFIDENCE', e.target.value)} />
+                    </FormField>
+                    <FormField label="Tag">
+                      <Select value={env.APD_TAG || 'alarm'} onValueChange={v => v && setField('APD_TAG', v)}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="info">info</SelectItem>
+                          <SelectItem value="alarm">alarm</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </FormField>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-3 rounded-md border border-border p-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">Fire &amp; Smoke Detection</span>
+                  <Switch
+                    checked={env.FIRE_SMOKE_ENABLED === 'true'}
+                    onCheckedChange={v => setField('FIRE_SMOKE_ENABLED', v ? 'true' : 'false')}
+                  />
+                </div>
+                {env.FIRE_SMOKE_ENABLED === 'true' && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField label="Model">
+                      {tritonModels.length > 0 ? (
+                        <Select value={env.FIRE_SMOKE_MODEL || ''} onValueChange={v => v && setField('FIRE_SMOKE_MODEL', v)}>
+                          <SelectTrigger><SelectValue placeholder="Select a model" /></SelectTrigger>
+                          <SelectContent>
+                            {tritonModels.map(m => (
+                              <SelectItem key={m.name} value={m.name}>
+                                {m.name} {m.state === 'READY' ? '● ready' : m.state === 'OFFLINE' ? '○ triton offline' : `(${m.state.toLowerCase()})`}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Input value={env.FIRE_SMOKE_MODEL || ''} onChange={e => setField('FIRE_SMOKE_MODEL', e.target.value)} placeholder="fire_smoke_640" />
+                      )}
+                    </FormField>
+                    <FormField label="Confidence (0.0–1.0)">
+                      <Input type="number" step="0.05" min="0" max="1" value={env.FIRE_SMOKE_CONFIDENCE || '0.3'} onChange={e => setField('FIRE_SMOKE_CONFIDENCE', e.target.value)} />
+                    </FormField>
+                    <FormField label="Fire Tag">
+                      <Select value={env.FIRE_TAG || 'alarm'} onValueChange={v => v && setField('FIRE_TAG', v)}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="info">info</SelectItem>
+                          <SelectItem value="alarm">alarm</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </FormField>
+                    <FormField label="Smoke Tag">
+                      <Select value={env.SMOKE_TAG || 'alarm'} onValueChange={v => v && setField('SMOKE_TAG', v)}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="info">info</SelectItem>
+                          <SelectItem value="alarm">alarm</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </FormField>
+                    <FormField label="Cooldown (minutes)">
+                      <Input type="number" min="1" value={env.FIRE_SMOKE_COOLDOWN_MINUTES || '5'} onChange={e => setField('FIRE_SMOKE_COOLDOWN_MINUTES', e.target.value)} />
+                    </FormField>
+                  </div>
+                )}
+              </div>
+            </div>
+          </Section>
+
           <div className="flex justify-end">
             <Button onClick={handleSave} disabled={saving}>
               {saving ? 'Saving...' : 'Save Settings'}
