@@ -27,6 +27,8 @@ def crop_image(frame, box, padding=None):
     person_crop = frame[y1_crop:y2_crop, x1_crop:x2_crop]
 
     crop_h, crop_w = person_crop.shape[:2]
+    if crop_h == 0 or crop_w == 0:
+        return person_crop
     if crop_h < cfg.MIN_CROP_SIZE[1] or crop_w < cfg.MIN_CROP_SIZE[0]:
         aspect_ratio = crop_w / crop_h
         if aspect_ratio > 1:
