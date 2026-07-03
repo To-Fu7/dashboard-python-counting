@@ -13,6 +13,7 @@ import cv2
 import app_state as state
 import counting_config as cfg
 from outputs.db_worker import db_queue_write
+from outputs.image_utils import crop_image
 from outputs.mqtt_out import send_person_in_mqtt
 
 
@@ -69,7 +70,7 @@ def compute_geometry(x1, y1, x2, y2):
     return geom
 
 
-def _count_in(track_id, gate_label, original_frame):
+def _count_in(track_id, gate_label, original_frame, box):
     state.person_in += 1
     state.interval_person_in += 1
     state.resample_hour_in += 1
@@ -81,14 +82,14 @@ def _count_in(track_id, gate_label, original_frame):
         (state.person_in, state.record_id)
     )
 
-    send_person_in_mqtt(original_frame, state.record_id, "person_in")
+    send_person_in_mqtt(crop_image(original_frame, box), state.record_id, "person_in")
 
     logging.info(
         f'Person {track_id} IN through {gate_label} - Total IN: {state.person_in}'
     )
 
 
-def _count_out(track_id, gate_label, original_frame):
+def _count_out(track_id, gate_label, original_frame, box):
     state.person_out += 1
     state.interval_person_out += 1
     state.resample_hour_out += 1
@@ -100,7 +101,7 @@ def _count_out(track_id, gate_label, original_frame):
         (state.person_out, state.record_id)
     )
 
-    send_person_in_mqtt(original_frame, state.record_id, "person_out")
+    send_person_in_mqtt(crop_image(original_frame, box), state.record_id, "person_out")
 
     logging.info(
         f'Person {track_id} OUT through {gate_label} - Total OUT: {state.person_out}'
@@ -161,7 +162,7 @@ def process_track(track_id, box, original_frame):
                     # Swapped mode
                     if crossed_A:
                         if state.state_out.get(gate_key):
-                            _count_out(track_id, gate_label, original_frame)
+                            _count_out(track_id, gate_label, original_frame, (x1, y1, x2, y2))
                             state.state_out[gate_key] = False
                         else:
                             state.state_in[gate_key] = True
@@ -170,7 +171,7 @@ def process_track(track_id, box, original_frame):
                             )
                     elif crossed_B:
                         if state.state_in.get(gate_key):
-                            _count_in(track_id, gate_label, original_frame)
+                            _count_in(track_id, gate_label, original_frame, (x1, y1, x2, y2))
                             state.state_in[gate_key] = False
                         else:
                             state.state_out[gate_key] = True
@@ -181,7 +182,7 @@ def process_track(track_id, box, original_frame):
                     # Default mode
                     if crossed_A:
                         if state.state_in.get(gate_key):
-                            _count_in(track_id, gate_label, original_frame)
+                            _count_in(track_id, gate_label, original_frame, (x1, y1, x2, y2))
                             state.state_in[gate_key] = False
                         else:
                             state.state_out[gate_key] = True
@@ -190,7 +191,7 @@ def process_track(track_id, box, original_frame):
                             )
                     elif crossed_B:
                         if state.state_out.get(gate_key):
-                            _count_out(track_id, gate_label, original_frame)
+                            _count_out(track_id, gate_label, original_frame, (x1, y1, x2, y2))
                             state.state_out[gate_key] = False
                         else:
                             state.state_in[gate_key] = True
