@@ -196,8 +196,6 @@ function AddCameraDialog({
   const [form, setForm] = useState({
     deviceName: '',
     deviceCode: '',
-    activityTopic: '/person_in',
-    intervalTopic: '',
     rtspUrl: '',
   });
 
@@ -224,7 +222,7 @@ function AddCameraDialog({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       toast.success(`Camera "${form.deviceCode}" created`);
-      setForm({ deviceName: '', deviceCode: '', activityTopic: '/person_in', intervalTopic: '', rtspUrl: '' });
+      setForm({ deviceName: '', deviceCode: '', rtspUrl: '' });
       onSuccess();
     } catch (e) {
       toast.error(`Failed to create: ${e}`);
@@ -262,20 +260,6 @@ function AddCameraDialog({
               value={form.rtspUrl}
               onChange={e => handleChange('rtspUrl', e.target.value)}
               placeholder="rtsp://user:pass@192.168.1.1/stream"
-            />
-          </Field>
-          <Field label="Activity Topic">
-            <Input
-              value={form.activityTopic}
-              onChange={e => handleChange('activityTopic', e.target.value)}
-              placeholder="/person_in"
-            />
-          </Field>
-          <Field label="Interval Topic">
-            <Input
-              value={form.intervalTopic}
-              onChange={e => handleChange('intervalTopic', e.target.value)}
-              placeholder="/resampling_person/EPW/CCTV_EPW_B2S"
             />
           </Field>
           <div className="flex gap-2 pt-2 justify-end">
