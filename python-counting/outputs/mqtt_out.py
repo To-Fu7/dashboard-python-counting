@@ -75,6 +75,8 @@ def send_person_in_mqtt(cropped_image, record_id, event_type="person_in"):
             "device_name": cfg.device_name,
             "timestamp": datetime.datetime.now(cfg.local_tz).isoformat(),
             "event": event_type,
+            "type": "people_counting",
+            "tag": cfg.PEOPLE_COUNTING_TAG,
             "image": base64.b64encode(image_bytes).decode('utf-8')
         }
 
@@ -88,6 +90,44 @@ def send_person_in_mqtt(cropped_image, record_id, event_type="person_in"):
 
     except Exception as e:
         logging.error(f"Error sending MQTT message: {e}")
+
+
+def send_detection_event_mqtt(image, detection_type, tag, label, confidence, track_id=None):
+    """Publish an APD/fire/smoke event. Reuses MQTT_TOPIC (distinguished by
+    the 'type' field) rather than a separate topic, per design decision."""
+    if cfg.DEBUG_MODE:
+        logging.info(f"DEBUG_MODE: Skipping MQTT send for {detection_type}/{label}")
+        return
+
+    if mqtt_client is None:
+        logging.warning("MQTT client not initialized, skipping detection event")
+        return
+
+    try:
+        _, buffer = cv2.imencode('.jpg', image, [cv2.IMWRITE_JPEG_QUALITY, cfg.JPEG_QUALITY])
+        image_bytes = buffer.tobytes()
+
+        payload = {
+            "device_id": cfg.device_id,
+            "device_code": cfg.device_code,
+            "device_name": cfg.device_name,
+            "timestamp": datetime.datetime.now(cfg.local_tz).isoformat(),
+            "event": f"{detection_type}_detected",
+            "type": detection_type,
+            "tag": tag,
+            "label": label,
+            "confidence": confidence,
+            "track_id": track_id,
+            "image": base64.b64encode(image_bytes).decode('utf-8'),
+        }
+
+        result = mqtt_client.publish(cfg.MQTT_TOPIC, json.dumps(payload), qos=1)
+        if result.rc == mqtt.MQTT_ERR_SUCCESS:
+            logging.info(f"{detection_type.upper()} event sent via MQTT (label={label}, conf={confidence:.2f})")
+        else:
+            logging.error(f"Failed to send MQTT message, error code: {result.rc}")
+    except Exception as e:
+        logging.error(f"Error sending detection event MQTT message: {e}")
 
 
 def send_interval_mqtt_data():
