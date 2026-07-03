@@ -31,3 +31,10 @@ last_daily_send = None
 
 # Store latest person coordinates for MQTT and bbox overlay
 latest_person_coordinates = []
+
+# APD violation tracking: track_id -> set of violation labels already alerted
+# (persists for the life of the track; cleared on tracker reset)
+apd_alerted_tracks = defaultdict(set)
+
+# Fire/Smoke cooldown: label -> last alert datetime
+firesmoke_last_alert = {}
