@@ -339,6 +339,21 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
             </div>
           </Section>
 
+          <Section title="Detection Mode">
+            <FormField label="Mode">
+              <Select value={env.DETECTION_MODE || 'line_crossing'} onValueChange={v => v && setField('DETECTION_MODE', v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="line_crossing">Line Crossing</SelectItem>
+                  <SelectItem value="zone">Zone Detection</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1.5">
+                Modes are exclusive. Switching mode clears the other mode&apos;s configuration on save.
+              </p>
+            </FormField>
+          </Section>
+
           <Section title="Detection Model (Triton)">
             <div className="grid grid-cols-2 gap-4">
               <FormField label="Triton Model">
@@ -390,28 +405,6 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
 
         {/* ── LINE CONFIGURATION ── */}
         <TabsContent value="lines" className="space-y-6 pt-4">
-          <Section title="Detection Mode">
-            <div className="flex gap-3">
-              {(['line_crossing', 'zone'] as const).map(m => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => setField('DETECTION_MODE', m)}
-                  className={`px-4 py-2 rounded-md text-sm border transition-colors ${
-                    (env.DETECTION_MODE || 'line_crossing') === m
-                      ? 'border-primary bg-primary/10 text-primary font-medium'
-                      : 'border-border text-muted-foreground hover:bg-accent'
-                  }`}
-                >
-                  {m === 'line_crossing' ? 'Line Crossing' : 'Zone Detection'}
-                </button>
-              ))}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1.5">
-              Modes are exclusive. Switching mode clears the other mode&apos;s configuration on save.
-            </p>
-          </Section>
-
           {(env.DETECTION_MODE || 'line_crossing') === 'line_crossing' ? (
             <>
               <Section title="Detection Behavior">
