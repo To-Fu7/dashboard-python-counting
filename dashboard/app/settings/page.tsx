@@ -9,6 +9,19 @@ import { toast } from 'sonner';
 import type { GlobalSettings } from '@/lib/types';
 import { DEFAULT_SETTINGS } from '@/lib/types';
 
+function TagSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <select
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs"
+    >
+      <option value="info">info</option>
+      <option value="alarm">alarm</option>
+    </select>
+  );
+}
+
 export default function SettingsPage() {
   const [settings, setSettings] = useState<GlobalSettings>(DEFAULT_SETTINGS);
   const [loading, setLoading] = useState(true);
@@ -208,6 +221,36 @@ export default function SettingsPage() {
                 {settings.defaults.debug_mode === 'true' ? 'ON (display enabled, no MQTT/DB)' : 'OFF (production mode)'}
               </span>
             </div>
+          </FormField>
+        </div>
+      </Section>
+
+      <Section title="Additional Detection Defaults">
+        <p className="text-xs text-muted-foreground -mt-2">
+          Applied when a new camera is created. APD and Fire/Smoke are disabled
+          by default — enable them per camera once a model is selected.
+        </p>
+        <div className="grid grid-cols-2 gap-4">
+          <FormField label="People Counting Tag">
+            <TagSelect value={settings.defaults.people_counting_tag} onChange={v => setDefault('people_counting_tag', v)} />
+          </FormField>
+          <FormField label="APD Confidence">
+            <Input type="number" step="0.05" min="0" max="1" value={settings.defaults.apd_confidence} onChange={e => setDefault('apd_confidence', e.target.value)} />
+          </FormField>
+          <FormField label="APD Tag">
+            <TagSelect value={settings.defaults.apd_tag} onChange={v => setDefault('apd_tag', v)} />
+          </FormField>
+          <FormField label="Fire/Smoke Confidence">
+            <Input type="number" step="0.05" min="0" max="1" value={settings.defaults.fire_smoke_confidence} onChange={e => setDefault('fire_smoke_confidence', e.target.value)} />
+          </FormField>
+          <FormField label="Fire Tag">
+            <TagSelect value={settings.defaults.fire_tag} onChange={v => setDefault('fire_tag', v)} />
+          </FormField>
+          <FormField label="Smoke Tag">
+            <TagSelect value={settings.defaults.smoke_tag} onChange={v => setDefault('smoke_tag', v)} />
+          </FormField>
+          <FormField label="Fire/Smoke Cooldown (minutes)">
+            <Input type="number" min="1" value={settings.defaults.fire_smoke_cooldown_minutes} onChange={e => setDefault('fire_smoke_cooldown_minutes', e.target.value)} />
           </FormField>
         </div>
       </Section>
