@@ -48,6 +48,21 @@ YOLO_IOU = '0.3'
 # ENABLE_NVDEC = 'true'        -> slim client image decodes in software
 # YOLO_DEVICE = 'auto'         -> inference device is the Triton server's concern
 
+# ADDITIONAL DETECTION (optional — runs alongside person counting on the same camera)
+PEOPLE_COUNTING_TAG = 'info'
+
+# APD_ENABLED = 'true'
+# APD_MODEL = 'apd_640'
+# APD_CONFIDENCE = '0.3'
+# APD_TAG = 'alarm'
+
+# FIRE_SMOKE_ENABLED = 'true'
+# FIRE_SMOKE_MODEL = 'fire_smoke_640'
+# FIRE_SMOKE_CONFIDENCE = '0.3'
+# FIRE_TAG = 'alarm'
+# SMOKE_TAG = 'alarm'
+# FIRE_SMOKE_COOLDOWN_MINUTES = '5'
+
 JPEG_QUALITY = 40
 
 FPS_LIMIT = 25
