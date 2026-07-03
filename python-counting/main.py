@@ -274,6 +274,7 @@ def main():
     apd_tracker = None
     apd_classes = {}
     apd_next_retry = 0.0
+    apd_was_down = False
     if cfg.APD_ENABLED:
         apd_client = TritonYoloClient(
             cfg.TRITON_URL, cfg.APD_MODEL, conf_thresh=cfg.APD_CONFIDENCE, class_id=None,
@@ -366,12 +367,18 @@ def main():
                 if apd_client is not None and time.time() >= apd_next_retry:
                     try:
                         apd_dets = apd_client.infer(detection_frame)
+                        if apd_was_down:
+                            logging.info("[APD] Reconnected — resetting APD tracker state")
+                            apd_tracker.reset()
+                            state.apd_alerted_tracks.clear()
+                            apd_was_down = False
                         apd_tracks = apd_tracker.update(
                             Detections(apd_dets[:, :4], apd_dets[:, 4], apd_dets[:, 5])
                         )
                     except TritonUnavailableError as e:
                         logging.warning(f"APD inference unavailable, retrying in 30s: {e}")
                         apd_next_retry = time.time() + 30
+                        apd_was_down = True
 
                 # ---- Optional Fire/Smoke detection (no tracker, cooldown-gated alerts) ----
                 firesmoke_dets = None
