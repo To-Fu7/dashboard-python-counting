@@ -101,6 +101,8 @@ export interface GlobalSettings {
     port: string;
     username: string;
     password: string;
+    activityTopicTemplate: string;   // '{code}' is replaced with the device code at creation time
+    intervalTopicTemplate: string;
   };
   defaults: {
     debug_mode: string;
@@ -132,6 +134,8 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
     port: '1883',
     username: '',
     password: '',
+    activityTopicTemplate: '/person_in/{code}',
+    intervalTopicTemplate: '/resampling_person/{code}',
   },
   defaults: {
     debug_mode: 'false',
