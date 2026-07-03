@@ -158,7 +158,24 @@ export default function SettingsPage() {
           <FormField label="Password">
             <Input type="password" value={settings.mqtt.password} onChange={e => setMqtt('password', e.target.value)} />
           </FormField>
+          <FormField label="Default Activity Topic Template">
+            <Input
+              value={settings.mqtt.activityTopicTemplate}
+              onChange={e => setMqtt('activityTopicTemplate', e.target.value)}
+              placeholder="/person_in/{code}"
+            />
+          </FormField>
+          <FormField label="Default Interval Topic Template">
+            <Input
+              value={settings.mqtt.intervalTopicTemplate}
+              onChange={e => setMqtt('intervalTopicTemplate', e.target.value)}
+              placeholder="/resampling_person/{code}"
+            />
+          </FormField>
         </div>
+        <p className="text-xs text-muted-foreground">
+          <code className="font-mono bg-muted px-1 rounded">{'{code}'}</code> is replaced with the device code when a new camera is created. Existing cameras are not affected — edit their topics individually on the device page.
+        </p>
       </Section>
 
       <Section title="Detection Defaults">
