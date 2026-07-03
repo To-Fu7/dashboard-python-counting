@@ -24,6 +24,17 @@ export interface DeviceEnvConfig {
   YOLO_MODEL?: string;        // legacy (pre-Triton); used to derive TRITON_MODEL
   YOLO_CONFIDENCE: string;
   ENABLE_NVDEC?: string;      // legacy (pre-Triton); ignored by the thin client
+  PEOPLE_COUNTING_TAG?: string;   // 'info' | 'alarm' tag attached to person_in/out MQTT payloads
+  APD_ENABLED?: string;
+  APD_MODEL?: string;
+  APD_CONFIDENCE?: string;
+  APD_TAG?: string;               // 'info' | 'alarm'
+  FIRE_SMOKE_ENABLED?: string;
+  FIRE_SMOKE_MODEL?: string;
+  FIRE_SMOKE_CONFIDENCE?: string;
+  FIRE_TAG?: string;               // 'info' | 'alarm'
+  SMOKE_TAG?: string;              // 'info' | 'alarm'
+  FIRE_SMOKE_COOLDOWN_MINUTES?: string;
   JPEG_QUALITY: string;
   FPS_LIMIT: string;
   FRAME_SKIP: string;
@@ -112,6 +123,13 @@ export interface GlobalSettings {
     jpeg_quality: string;
     fps_limit: string;
     frame_skip: string;
+    people_counting_tag: string;
+    apd_confidence: string;
+    apd_tag: string;
+    fire_smoke_confidence: string;
+    fire_tag: string;
+    smoke_tag: string;
+    fire_smoke_cooldown_minutes: string;
   };
 }
 
@@ -145,5 +163,12 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
     jpeg_quality: '40',
     fps_limit: '0',
     frame_skip: '2',
+    people_counting_tag: 'info',
+    apd_confidence: '0.3',
+    apd_tag: 'alarm',
+    fire_smoke_confidence: '0.3',
+    fire_tag: 'alarm',
+    smoke_tag: 'alarm',
+    fire_smoke_cooldown_minutes: '5',
   },
 };
