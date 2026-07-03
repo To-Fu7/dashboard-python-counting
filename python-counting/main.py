@@ -27,7 +27,9 @@ import app_state as state
 import counting_config as cfg
 import lifecycle
 from counting import process_track
+from detection import apd, firesmoke
 from inference import TritonUnavailableError, TritonYoloClient
+from inference.model_metadata import load_model_classes
 from outputs import bbox_writer, db_worker, mjpeg_server, mqtt_out
 from tracking import BYTETracker, BYTETrackerArgs, Detections
 
@@ -192,7 +194,7 @@ def push_degraded_frame(frame, message):
             mjpeg_server.push_frame(jpeg.tobytes())
 
 
-def reset_tracking_state(tracker):
+def reset_tracking_state(tracker, apd_tracker=None):
     """After a Triton outage, drop tracker + crossing state so stale Kalman
     predictions can't generate phantom crossings on reconnect."""
     tracker.reset()
@@ -201,6 +203,9 @@ def reset_tracking_state(tracker):
     state.state_in.clear()
     state.state_out.clear()
     state.zone_inside_prev.clear()
+    if apd_tracker is not None:
+        apd_tracker.reset()
+        state.apd_alerted_tracks.clear()
 
 
 def show_debug_window(frame):
@@ -263,6 +268,30 @@ def main():
     triton_was_down = False
     next_triton_retry = 0.0
 
+    # Optional additional detectors — independent model + (for APD) tracker.
+    # class_id=None means "keep all classes" (these models aren't person-only).
+    apd_client = None
+    apd_tracker = None
+    apd_classes = {}
+    apd_next_retry = 0.0
+    if cfg.APD_ENABLED:
+        apd_client = TritonYoloClient(
+            cfg.TRITON_URL, cfg.APD_MODEL, conf_thresh=cfg.APD_CONFIDENCE, class_id=None,
+        )
+        apd_tracker = BYTETracker(BYTETrackerArgs(), frame_rate=30)
+        apd_classes = load_model_classes(cfg.APD_MODEL)
+        logging.info(f"APD detection enabled: model={cfg.APD_MODEL} conf={cfg.APD_CONFIDENCE}")
+
+    firesmoke_client = None
+    firesmoke_classes = {}
+    firesmoke_next_retry = 0.0
+    if cfg.FIRE_SMOKE_ENABLED:
+        firesmoke_client = TritonYoloClient(
+            cfg.TRITON_URL, cfg.FIRE_SMOKE_MODEL, conf_thresh=cfg.FIRE_SMOKE_CONFIDENCE, class_id=None,
+        )
+        firesmoke_classes = load_model_classes(cfg.FIRE_SMOKE_MODEL)
+        logging.info(f"Fire/Smoke detection enabled: model={cfg.FIRE_SMOKE_MODEL} conf={cfg.FIRE_SMOKE_CONFIDENCE}")
+
     last_waiting_log = time.time()
 
     while True:
@@ -324,13 +353,34 @@ def main():
 
                 if triton_was_down:
                     logging.info("[Triton] Reconnected — resetting tracker state")
-                    reset_tracking_state(tracker)
+                    reset_tracking_state(tracker, apd_tracker)
                     triton_was_down = False
                 triton_backoff = TRITON_BACKOFF_MIN_S
 
                 # ---- Local ByteTrack (same tracker/config as legacy model.track) ----
                 tracks = tracker.update(Detections(dets[:, :4], dets[:, 4], dets[:, 5]))
                 # tracks rows: x1,y1,x2,y2,track_id,score,cls,det_idx (Kalman-smoothed)
+
+                # ---- Optional APD detection (independent model + tracker) ----
+                apd_tracks = []
+                if apd_client is not None and time.time() >= apd_next_retry:
+                    try:
+                        apd_dets = apd_client.infer(detection_frame)
+                        apd_tracks = apd_tracker.update(
+                            Detections(apd_dets[:, :4], apd_dets[:, 4], apd_dets[:, 5])
+                        )
+                    except TritonUnavailableError as e:
+                        logging.warning(f"APD inference unavailable, retrying in 30s: {e}")
+                        apd_next_retry = time.time() + 30
+
+                # ---- Optional Fire/Smoke detection (no tracker, cooldown-gated alerts) ----
+                firesmoke_dets = None
+                if firesmoke_client is not None and time.time() >= firesmoke_next_retry:
+                    try:
+                        firesmoke_dets = firesmoke_client.infer(detection_frame)
+                    except TritonUnavailableError as e:
+                        logging.warning(f"Fire/Smoke inference unavailable, retrying in 30s: {e}")
+                        firesmoke_next_retry = time.time() + 30
 
                 # Draw detection overlays (only when DEBUG_MODE or someone is watching the stream)
                 draw_now = cfg.DEBUG_MODE or mjpeg_server.viewer_count() > 0
@@ -383,6 +433,43 @@ def main():
 
                     if draw_now:
                         draw_track(frame, track_id, x1, y1, x2, y2, geom)
+
+                # Process APD violations (per-track dedup; draws an orange box)
+                for trk in apd_tracks:
+                    track_id = int(trk[4])
+                    conf = float(trk[5])
+                    class_id = int(trk[6])
+                    label = apd_classes.get(class_id, f'class_{class_id}')
+                    ax1, ay1, ax2, ay2 = (int(v) for v in trk[:4])
+                    ax1 += cfg.CROP_X1
+                    ay1 += cfg.CROP_Y1
+                    ax2 += cfg.CROP_X1
+                    ay2 += cfg.CROP_Y1
+                    if draw_now:
+                        cv2.rectangle(frame, (ax1, ay1), (ax2, ay2), (0, 165, 255), 2)
+                        cv2.putText(frame, label, (ax1, max(0, ay1 - 6)),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 165, 255), 2)
+                    apd.process_detection(track_id, label, conf, (ax1, ay1, ax2, ay2), original_frame)
+
+                # Process Fire/Smoke (cooldown-gated alerts; draws every live detection)
+                if firesmoke_dets is not None:
+                    for row in firesmoke_dets:
+                        conf = float(row[4])
+                        class_id = int(row[5])
+                        label = firesmoke_classes.get(class_id, f'class_{class_id}')
+                        if label not in ('fire', 'smoke'):
+                            continue
+                        fx1, fy1, fx2, fy2 = (int(v) for v in row[:4])
+                        fx1 += cfg.CROP_X1
+                        fy1 += cfg.CROP_Y1
+                        fx2 += cfg.CROP_X1
+                        fy2 += cfg.CROP_Y1
+                        color = (0, 0, 255) if label == 'fire' else (128, 128, 128)
+                        if draw_now:
+                            cv2.rectangle(frame, (fx1, fy1), (fx2, fy2), color, 2)
+                            cv2.putText(frame, label, (fx1, max(0, fy1 - 6)),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+                        firesmoke.process_detection(label, conf, frame)
 
                 # bbox overlay file for the dashboard
                 bbox_writer.write_bbox_file()
