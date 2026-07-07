@@ -27,25 +27,34 @@ def test_apd_dedup():
     from detection import apd
 
     calls = []
-    apd.insert_detection_event = lambda *a, **k: calls.append(('db', a))
+    apd.increment_hourly = lambda *a, **k: calls.append(('hourly', a))
     apd.send_detection_event_mqtt = lambda *a, **k: calls.append(('mqtt', a))
 
     state.apd_alerted_tracks.clear()
+    state.apd_unique_this_hour.clear()
 
+    # First-ever sighting of track 7: label increment + unique_persons increment + mqtt = 3
     apd.process_detection(7, 'no_helmet', 0.8, (0, 0, 10, 10), _fake_frame())
-    check("first violation fires one DB + one MQTT event", len(calls) == 2, f"calls={calls}")
+    check("first violation for a new track fires label + unique_persons + mqtt",
+          len(calls) == 3, f"calls={calls}")
 
     calls.clear()
     apd.process_detection(7, 'no_helmet', 0.9, (0, 0, 10, 10), _fake_frame())
     check("repeat violation for same track+label is suppressed", len(calls) == 0, f"calls={calls}")
 
+    # Same track, new label: label increment + mqtt only — track 7 already
+    # counted toward unique_persons, so that increment does NOT fire again.
     calls.clear()
     apd.process_detection(7, 'no_vest', 0.7, (0, 0, 10, 10), _fake_frame())
-    check("different label on same track still fires", len(calls) == 2, f"calls={calls}")
+    check("different label on same track fires label + mqtt but not unique_persons again",
+          len(calls) == 2, f"calls={calls}")
 
+    # New track: label increment + unique_persons increment (first time track 8
+    # is seen) + mqtt = 3
     calls.clear()
     apd.process_detection(8, 'no_helmet', 0.8, (0, 0, 10, 10), _fake_frame())
-    check("same label on a different track still fires", len(calls) == 2, f"calls={calls}")
+    check("same label on a different (new) track fires label + unique_persons + mqtt",
+          len(calls) == 3, f"calls={calls}")
 
 
 def test_firesmoke_cooldown():
@@ -55,7 +64,7 @@ def test_firesmoke_cooldown():
     from detection import firesmoke
 
     calls = []
-    firesmoke.insert_detection_event = lambda *a, **k: calls.append(('db', a))
+    firesmoke.increment_hourly = lambda *a, **k: calls.append(('hourly', a))
     firesmoke.send_detection_event_mqtt = lambda *a, **k: calls.append(('mqtt', a))
 
     state.firesmoke_last_alert.clear()

@@ -36,5 +36,11 @@ latest_person_coordinates = []
 # (persists for the life of the track; cleared on tracker reset)
 apd_alerted_tracks = defaultdict(set)
 
+# APD unique-person-per-hour tracking: track_ids already counted toward
+# apd_hourly's "unique_persons" counter this hour (cleared on hour rotation
+# and on APD tracker reset — a reset tracker recycles ids, and a new hour
+# should start its unique count from zero).
+apd_unique_this_hour = set()
+
 # Fire/Smoke cooldown: label -> last alert datetime
 firesmoke_last_alert = {}

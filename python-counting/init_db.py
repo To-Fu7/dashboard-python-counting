@@ -1,5 +1,6 @@
-"""One-stop database provisioning: creates person_inout, inout_resample, and
-detection_events if they don't already exist. Safe to run repeatedly.
+"""One-stop database provisioning: creates person_inout, inout_resample,
+apd_hourly, and firesmoke_hourly if they don't already exist. Safe to run
+repeatedly.
 
 Usage:  python init_db.py
 Reads the same PG_* environment variables as main.py (via a .env file or the
@@ -47,20 +48,29 @@ SCHEMA_STATEMENTS = [
     )
     """,
     """
-    CREATE TABLE IF NOT EXISTS detection_events (
-        id UUID PRIMARY KEY,
+    CREATE TABLE IF NOT EXISTS apd_hourly (
         device_id UUID NOT NULL,
         device_code TEXT NOT NULL,
         device_name TEXT,
-        detection_type TEXT NOT NULL,
-        tag TEXT NOT NULL CHECK (tag IN ('info', 'alarm')),
-        label TEXT NOT NULL,
-        track_id INTEGER,
-        confidence REAL NOT NULL,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        hour_start TIMESTAMPTZ NOT NULL,
+        data JSONB NOT NULL DEFAULT '{}',
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE (device_id, hour_start)
     )
     """,
-    "CREATE INDEX IF NOT EXISTS idx_detection_events_device_time ON detection_events (device_id, created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_apd_hourly_device_time ON apd_hourly (device_id, hour_start DESC)",
+    """
+    CREATE TABLE IF NOT EXISTS firesmoke_hourly (
+        device_id UUID NOT NULL,
+        device_code TEXT NOT NULL,
+        device_name TEXT,
+        hour_start TIMESTAMPTZ NOT NULL,
+        data JSONB NOT NULL DEFAULT '{}',
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE (device_id, hour_start)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_firesmoke_hourly_device_time ON firesmoke_hourly (device_id, hour_start DESC)",
 ]
 
 
@@ -73,7 +83,7 @@ def main():
             for stmt in SCHEMA_STATEMENTS:
                 cur.execute(stmt)
                 logging.info(f"OK: {stmt.strip().splitlines()[0].strip()}")
-        logging.info("Schema is up to date (person_inout, inout_resample, detection_events).")
+        logging.info("Schema is up to date (person_inout, inout_resample, apd_hourly, firesmoke_hourly).")
     finally:
         conn.close()
 

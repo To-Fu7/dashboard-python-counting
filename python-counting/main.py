@@ -202,11 +202,13 @@ def push_degraded_frame(frame, message):
 
 
 def reset_apd_state(apd_tracker):
-    """Tracker reset and alert-dedup clear must always happen together —
-    a reset tracker reuses track ids, so stale dedup entries would either
-    suppress fresh alerts or re-alert on recycled ids."""
+    """Tracker reset and dedup-state clear must always happen together —
+    a reset tracker reuses track ids, so stale dedup/unique-count entries
+    would either suppress fresh alerts or miscount uniqueness on recycled
+    ids."""
     apd_tracker.reset()
     state.apd_alerted_tracks.clear()
+    state.apd_unique_this_hour.clear()
 
 
 def reset_tracking_state(tracker, apd_tracker=None):
@@ -252,6 +254,7 @@ def main():
     # Initialize database
     if not cfg.DEBUG_MODE and not db_worker.init_db():
         return
+    lifecycle.pregenerate_hourly_tables(datetime.datetime.now(cfg.local_tz).date())
     last_data_id = lifecycle.initialize_counts()
     if not last_data_id:
         if not cfg.DEBUG_MODE:

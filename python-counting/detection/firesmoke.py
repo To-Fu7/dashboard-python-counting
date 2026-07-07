@@ -6,7 +6,7 @@ import logging
 
 import app_state as state
 import counting_config as cfg
-from outputs.detection_events_db import insert_detection_event
+from outputs.hourly_aggregate_db import increment_hourly
 from outputs.mqtt_out import send_detection_event_mqtt
 
 
@@ -26,5 +26,6 @@ def process_detection(label, confidence, frame):
 
     tag = cfg.FIRE_TAG if label == 'fire' else cfg.SMOKE_TAG
     logging.info(f"{label.upper()} detected, conf={confidence:.2f} (tag={tag})")
-    insert_detection_event(label, tag, label, None, confidence)
+    increment_hourly('firesmoke_hourly', cfg.device_id, cfg.device_code, cfg.device_name,
+                      state.current_tracking_hour, label)
     send_detection_event_mqtt(frame, label, tag, label, confidence, track_id=None)
