@@ -6,31 +6,15 @@ Run from python-counting/:  python tests/test_detection_events.py
 """
 import datetime
 import os
-import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from testutil import check, finish  # bootstraps sys.path + base env vars
 
-os.environ.setdefault('SCREEN_RESOLUTION', '[800, 600]')
-os.environ.setdefault('lineA', '[(0,0),(10,10)]')
-os.environ.setdefault('DEBUG_MODE', 'true')
 os.environ.setdefault('APD_TAG', 'alarm')
 os.environ.setdefault('FIRE_TAG', 'alarm')
 os.environ.setdefault('SMOKE_TAG', 'alarm')
 os.environ.setdefault('FIRE_SMOKE_COOLDOWN_MINUTES', '5')
 
 import numpy as np
-
-PASS = FAIL = 0
-
-
-def check(name, cond, detail=""):
-    global PASS, FAIL
-    if cond:
-        PASS += 1
-        print(f"  PASS  {name}")
-    else:
-        FAIL += 1
-        print(f"  FAIL  {name} {detail}")
 
 
 def _fake_frame():
@@ -104,5 +88,4 @@ def test_firesmoke_cooldown():
 if __name__ == '__main__':
     test_apd_dedup()
     test_firesmoke_cooldown()
-    print(f"\n{PASS} passed, {FAIL} failed")
-    sys.exit(1 if FAIL else 0)
+    finish()

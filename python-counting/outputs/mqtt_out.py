@@ -52,82 +52,67 @@ def shutdown_mqtt():
         mqtt_client.disconnect()
 
 
-def send_person_in_mqtt(cropped_image, record_id, event_type="person_in"):
-    """Send cropped image via MQTT when person enters"""
+def _publish_image_event(image, extra_fields, log_label):
+    """Shared guard/encode/publish path for image-carrying MQTT events.
+    extra_fields are merged into the common device/timestamp envelope."""
     if cfg.DEBUG_MODE:
-        logging.info(f"DEBUG_MODE: Skipping MQTT send for {event_type}")
+        logging.info(f"DEBUG_MODE: Skipping MQTT send for {log_label}")
         return
 
     if mqtt_client is None:
-        logging.warning("MQTT client not initialized, skipping message")
+        logging.warning(f"MQTT client not initialized, skipping {log_label}")
         return
 
     try:
-        # Convert cropped image to bytes with higher quality
-        _, buffer = cv2.imencode('.jpg', cropped_image, [cv2.IMWRITE_JPEG_QUALITY, cfg.JPEG_QUALITY])
-        image_bytes = buffer.tobytes()
+        _, buffer = cv2.imencode('.jpg', image, [cv2.IMWRITE_JPEG_QUALITY, cfg.JPEG_QUALITY])
 
-        # Create payload
         payload = {
-            "record_id": record_id,
             "device_id": cfg.device_id,
             "device_code": cfg.device_code,
             "device_name": cfg.device_name,
             "timestamp": datetime.datetime.now(cfg.local_tz).isoformat(),
+            **extra_fields,
+            "image": base64.b64encode(buffer.tobytes()).decode('utf-8'),
+        }
+
+        result = mqtt_client.publish(cfg.MQTT_TOPIC, json.dumps(payload), qos=1)
+        if result.rc == mqtt.MQTT_ERR_SUCCESS:
+            logging.info(f"{log_label} sent via MQTT")
+        else:
+            logging.error(f"Failed to send MQTT message ({log_label}), error code: {result.rc}")
+    except Exception as e:
+        logging.error(f"Error sending MQTT message ({log_label}): {e}")
+
+
+def send_person_in_mqtt(cropped_image, record_id, event_type="person_in"):
+    """Send cropped image via MQTT when person enters"""
+    _publish_image_event(
+        cropped_image,
+        {
+            "record_id": record_id,
             "event": event_type,
             "type": "people_counting",
             "tag": cfg.PEOPLE_COUNTING_TAG,
-            "image": base64.b64encode(image_bytes).decode('utf-8')
-        }
-
-        # Send to MQTT
-        result = mqtt_client.publish(cfg.MQTT_TOPIC, json.dumps(payload), qos=1)
-
-        if result.rc == mqtt.MQTT_ERR_SUCCESS:
-            logging.info(f"Person {event_type.upper()} image sent via MQTT for record {record_id}")
-        else:
-            logging.error(f"Failed to send MQTT message, error code: {result.rc}")
-
-    except Exception as e:
-        logging.error(f"Error sending MQTT message: {e}")
+        },
+        f"person {event_type} (record {record_id})",
+    )
 
 
 def send_detection_event_mqtt(image, detection_type, tag, label, confidence, track_id=None):
     """Publish an APD/fire/smoke event. Reuses MQTT_TOPIC (distinguished by
     the 'type' field) rather than a separate topic, per design decision."""
-    if cfg.DEBUG_MODE:
-        logging.info(f"DEBUG_MODE: Skipping MQTT send for {detection_type}/{label}")
-        return
-
-    if mqtt_client is None:
-        logging.warning("MQTT client not initialized, skipping detection event")
-        return
-
-    try:
-        _, buffer = cv2.imencode('.jpg', image, [cv2.IMWRITE_JPEG_QUALITY, cfg.JPEG_QUALITY])
-        image_bytes = buffer.tobytes()
-
-        payload = {
-            "device_id": cfg.device_id,
-            "device_code": cfg.device_code,
-            "device_name": cfg.device_name,
-            "timestamp": datetime.datetime.now(cfg.local_tz).isoformat(),
+    _publish_image_event(
+        image,
+        {
             "event": f"{detection_type}_detected",
             "type": detection_type,
             "tag": tag,
             "label": label,
             "confidence": confidence,
             "track_id": track_id,
-            "image": base64.b64encode(image_bytes).decode('utf-8'),
-        }
-
-        result = mqtt_client.publish(cfg.MQTT_TOPIC, json.dumps(payload), qos=1)
-        if result.rc == mqtt.MQTT_ERR_SUCCESS:
-            logging.info(f"{detection_type.upper()} event sent via MQTT (label={label}, conf={confidence:.2f})")
-        else:
-            logging.error(f"Failed to send MQTT message, error code: {result.rc}")
-    except Exception as e:
-        logging.error(f"Error sending detection event MQTT message: {e}")
+        },
+        f"{detection_type} event (label={label}, conf={confidence:.2f})",
+    )
 
 
 def send_interval_mqtt_data():

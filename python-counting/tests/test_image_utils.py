@@ -2,32 +2,12 @@
 
 Run from python-counting/:  python tests/test_image_utils.py
 """
-import os
-import sys
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-# Minimal env so counting_config imports without a real .env
-os.environ.setdefault('SCREEN_RESOLUTION', '[800, 600]')
-os.environ.setdefault('lineA', '[(351, 51), (381, 207)]')
-os.environ.setdefault('DEBUG_MODE', 'true')
+from testutil import check, finish  # bootstraps sys.path + base env vars
 
 import numpy as np
 
 import counting_config as cfg
 from outputs.image_utils import crop_image
-
-PASS = FAIL = 0
-
-
-def check(name, cond, detail=""):
-    global PASS, FAIL
-    if cond:
-        PASS += 1
-        print(f"  PASS  {name}")
-    else:
-        FAIL += 1
-        print(f"  FAIL  {name} {detail}")
 
 
 def _fake_frame(h=600, w=800):
@@ -97,5 +77,4 @@ if __name__ == '__main__':
     test_no_upscale_large_box()
     test_clamp_at_frame_edge()
     test_degenerate_box_does_not_crash()
-    print(f"\n{PASS} passed, {FAIL} failed")
-    sys.exit(1 if FAIL else 0)
+    finish()

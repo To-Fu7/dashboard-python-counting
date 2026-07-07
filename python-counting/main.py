@@ -36,6 +36,13 @@ from tracking import BYTETracker, BYTETrackerArgs, Detections
 TRITON_BACKOFF_MIN_S = 1.0
 TRITON_BACKOFF_MAX_S = 30.0
 
+# Fire/smoke alerts are cooldown-gated (minutes), so when nobody is watching the
+# stream there is no reason to run its inference every frame — sample instead.
+FIRESMOKE_INFER_INTERVAL_S = 1.0
+
+# apd_alerted_tracks gains one entry per track ever seen; prune when it grows.
+APD_ALERTED_TRACKS_MAX = 2000
+
 _imshow_available = True  # opencv-headless has no GUI; disabled on first failure
 
 
@@ -194,6 +201,14 @@ def push_degraded_frame(frame, message):
             mjpeg_server.push_frame(jpeg.tobytes())
 
 
+def reset_apd_state(apd_tracker):
+    """Tracker reset and alert-dedup clear must always happen together —
+    a reset tracker reuses track ids, so stale dedup entries would either
+    suppress fresh alerts or re-alert on recycled ids."""
+    apd_tracker.reset()
+    state.apd_alerted_tracks.clear()
+
+
 def reset_tracking_state(tracker, apd_tracker=None):
     """After a Triton outage, drop tracker + crossing state so stale Kalman
     predictions can't generate phantom crossings on reconnect."""
@@ -204,8 +219,7 @@ def reset_tracking_state(tracker, apd_tracker=None):
     state.state_out.clear()
     state.zone_inside_prev.clear()
     if apd_tracker is not None:
-        apd_tracker.reset()
-        state.apd_alerted_tracks.clear()
+        reset_apd_state(apd_tracker)
 
 
 def show_debug_window(frame):
@@ -286,6 +300,7 @@ def main():
     firesmoke_client = None
     firesmoke_classes = {}
     firesmoke_next_retry = 0.0
+    firesmoke_next_infer = 0.0
     if cfg.FIRE_SMOKE_ENABLED:
         firesmoke_client = TritonYoloClient(
             cfg.TRITON_URL, cfg.FIRE_SMOKE_MODEL, conf_thresh=cfg.FIRE_SMOKE_CONFIDENCE, class_id=None,
@@ -342,8 +357,15 @@ def main():
                     time.sleep(0.2)  # don't spin the decode loop at full speed
                     continue
 
+                # Computed early: also gates how often fire/smoke inference runs
+                draw_now = cfg.DEBUG_MODE or mjpeg_server.viewer_count() > 0
+
+                # Detectors sharing the same input shape/dtype reuse one
+                # preprocessed tensor per frame instead of re-letterboxing
+                pre_cache = {}
+
                 try:
-                    dets = client.infer(detection_frame)  # [N,6] x1,y1,x2,y2,conf,cls
+                    dets = client.infer(detection_frame, pre_cache)  # [N,6] x1,y1,x2,y2,conf,cls
                 except TritonUnavailableError as e:
                     logging.error(f"{e} — retrying in {triton_backoff:.0f}s (capture stays alive)")
                     next_triton_retry = time.time() + triton_backoff
@@ -366,11 +388,10 @@ def main():
                 apd_tracks = []
                 if apd_client is not None and time.time() >= apd_next_retry:
                     try:
-                        apd_dets = apd_client.infer(detection_frame)
+                        apd_dets = apd_client.infer(detection_frame, pre_cache)
                         if apd_was_down:
                             logging.info("[APD] Reconnected — resetting APD tracker state")
-                            apd_tracker.reset()
-                            state.apd_alerted_tracks.clear()
+                            reset_apd_state(apd_tracker)
                             apd_was_down = False
                         apd_tracks = apd_tracker.update(
                             Detections(apd_dets[:, :4], apd_dets[:, 4], apd_dets[:, 5])
@@ -381,16 +402,18 @@ def main():
                         apd_was_down = True
 
                 # ---- Optional Fire/Smoke detection (no tracker, cooldown-gated alerts) ----
+                # Alerts fire at most once per cooldown window, so without a viewer
+                # there's no per-frame consumer — sample instead of inferring every frame.
                 firesmoke_dets = None
-                if firesmoke_client is not None and time.time() >= firesmoke_next_retry:
+                if (firesmoke_client is not None and time.time() >= firesmoke_next_retry
+                        and (draw_now or time.time() >= firesmoke_next_infer)):
                     try:
-                        firesmoke_dets = firesmoke_client.infer(detection_frame)
+                        firesmoke_dets = firesmoke_client.infer(detection_frame, pre_cache)
+                        firesmoke_next_infer = time.time() + FIRESMOKE_INFER_INTERVAL_S
                     except TritonUnavailableError as e:
                         logging.warning(f"Fire/Smoke inference unavailable, retrying in 30s: {e}")
                         firesmoke_next_retry = time.time() + 30
 
-                # Draw detection overlays (only when DEBUG_MODE or someone is watching the stream)
-                draw_now = cfg.DEBUG_MODE or mjpeg_server.viewer_count() > 0
                 if draw_now:
                     draw_static_overlays(frame)
 
@@ -457,6 +480,12 @@ def main():
                         cv2.putText(frame, label, (ax1, max(0, ay1 - 6)),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 165, 255), 2)
                     apd.process_detection(track_id, label, conf, (ax1, ay1, ax2, ay2), original_frame)
+
+                # Bound apd_alerted_tracks: ByteTrack ids are monotonic within a run,
+                # so the smallest keys always belong to long-dead tracks.
+                if len(state.apd_alerted_tracks) > APD_ALERTED_TRACKS_MAX:
+                    for stale_id in sorted(state.apd_alerted_tracks)[:APD_ALERTED_TRACKS_MAX // 2]:
+                        del state.apd_alerted_tracks[stale_id]
 
                 # Process Fire/Smoke (cooldown-gated alerts; draws every live detection)
                 if firesmoke_dets is not None:

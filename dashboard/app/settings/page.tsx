@@ -5,22 +5,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { TagSelect } from '@/components/TagSelect';
 import { toast } from 'sonner';
 import type { GlobalSettings } from '@/lib/types';
 import { DEFAULT_SETTINGS } from '@/lib/types';
-
-function TagSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  return (
-    <select
-      value={value}
-      onChange={e => onChange(e.target.value)}
-      className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs"
-    >
-      <option value="info">info</option>
-      <option value="alarm">alarm</option>
-    </select>
-  );
-}
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<GlobalSettings>(DEFAULT_SETTINGS);

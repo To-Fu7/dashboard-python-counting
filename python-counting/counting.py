@@ -162,7 +162,7 @@ def process_track(track_id, box, original_frame):
                     # Swapped mode
                     if crossed_A:
                         if state.state_out.get(gate_key):
-                            _count_out(track_id, gate_label, original_frame, (x1, y1, x2, y2))
+                            _count_out(track_id, gate_label, original_frame, box)
                             state.state_out[gate_key] = False
                         else:
                             state.state_in[gate_key] = True
@@ -171,7 +171,7 @@ def process_track(track_id, box, original_frame):
                             )
                     elif crossed_B:
                         if state.state_in.get(gate_key):
-                            _count_in(track_id, gate_label, original_frame, (x1, y1, x2, y2))
+                            _count_in(track_id, gate_label, original_frame, box)
                             state.state_in[gate_key] = False
                         else:
                             state.state_out[gate_key] = True
@@ -182,7 +182,7 @@ def process_track(track_id, box, original_frame):
                     # Default mode
                     if crossed_A:
                         if state.state_in.get(gate_key):
-                            _count_in(track_id, gate_label, original_frame, (x1, y1, x2, y2))
+                            _count_in(track_id, gate_label, original_frame, box)
                             state.state_in[gate_key] = False
                         else:
                             state.state_out[gate_key] = True
@@ -191,7 +191,7 @@ def process_track(track_id, box, original_frame):
                             )
                     elif crossed_B:
                         if state.state_out.get(gate_key):
-                            _count_out(track_id, gate_label, original_frame, (x1, y1, x2, y2))
+                            _count_out(track_id, gate_label, original_frame, box)
                             state.state_out[gate_key] = False
                         else:
                             state.state_in[gate_key] = True

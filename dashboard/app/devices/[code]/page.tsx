@@ -9,6 +9,7 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { StatusBadge } from '@/components/StatusBadge';
+import { TagSelect } from '@/components/TagSelect';
 import { LineDrawer } from '@/components/LineDrawer';
 import { ZoneDrawer, type DrawnZone } from '@/components/ZoneDrawer';
 import type { CropRect } from '@/lib/types';
@@ -90,6 +91,32 @@ function drawnLinesToEnv(lines: DrawnLine[]): Record<string, string> {
     result[`line${line.label}`] = `[(${line.p1.x}, ${line.p1.y}), (${line.p2.x}, ${line.p2.y})]`;
   }
   return result;
+}
+
+/** Triton model picker with ready-state badge and free-text fallback when the
+ *  repository index is unavailable — used by the primary, APD, and Fire/Smoke
+ *  model fields so the readiness display can't drift between them. */
+function ModelSelect({ value, onChange, placeholder, models }: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  models: { name: string; state: string }[];
+}) {
+  if (models.length === 0) {
+    return <Input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} />;
+  }
+  return (
+    <Select value={value} onValueChange={v => v && onChange(v)}>
+      <SelectTrigger><SelectValue placeholder="Select a model" /></SelectTrigger>
+      <SelectContent>
+        {models.map(m => (
+          <SelectItem key={m.name} value={m.name}>
+            {m.name} {m.state === 'READY' ? '● ready' : m.state === 'OFFLINE' ? '○ triton offline' : `(${m.state.toLowerCase()})`}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
 }
 
 export default function DeviceDetailPage({ params }: { params: Promise<{ code: string }> }) {
@@ -357,24 +384,12 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
           <Section title="Detection Model (Triton)">
             <div className="grid grid-cols-2 gap-4">
               <FormField label="Triton Model">
-                {tritonModels.length > 0 ? (
-                  <Select value={env.TRITON_MODEL || ''} onValueChange={v => v && setField('TRITON_MODEL', v)}>
-                    <SelectTrigger><SelectValue placeholder="Select a model" /></SelectTrigger>
-                    <SelectContent>
-                      {tritonModels.map(m => (
-                        <SelectItem key={m.name} value={m.name}>
-                          {m.name} {m.state === 'READY' ? '● ready' : m.state === 'OFFLINE' ? '○ triton offline' : `(${m.state.toLowerCase()})`}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <Input
-                    value={env.TRITON_MODEL || ''}
-                    onChange={e => setField('TRITON_MODEL', e.target.value)}
-                    placeholder="yolo26m_640 (Triton model repository name)"
-                  />
-                )}
+                <ModelSelect
+                  value={env.TRITON_MODEL || ''}
+                  onChange={v => setField('TRITON_MODEL', v)}
+                  placeholder="yolo26m_640 (Triton model repository name)"
+                  models={tritonModels}
+                />
               </FormField>
               <FormField label="Confidence (0.0–1.0)">
                 <Input type="number" step="0.05" min="0" max="1" value={env.YOLO_CONFIDENCE || '0.3'} onChange={e => setField('YOLO_CONFIDENCE', e.target.value)} />
@@ -409,32 +424,18 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
                 {env.APD_ENABLED === 'true' && (
                   <div className="grid grid-cols-2 gap-4">
                     <FormField label="Model">
-                      {tritonModels.length > 0 ? (
-                        <Select value={env.APD_MODEL || ''} onValueChange={v => v && setField('APD_MODEL', v)}>
-                          <SelectTrigger><SelectValue placeholder="Select a model" /></SelectTrigger>
-                          <SelectContent>
-                            {tritonModels.map(m => (
-                              <SelectItem key={m.name} value={m.name}>
-                                {m.name} {m.state === 'READY' ? '● ready' : m.state === 'OFFLINE' ? '○ triton offline' : `(${m.state.toLowerCase()})`}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      ) : (
-                        <Input value={env.APD_MODEL || ''} onChange={e => setField('APD_MODEL', e.target.value)} placeholder="apd_640" />
-                      )}
+                      <ModelSelect
+                        value={env.APD_MODEL || ''}
+                        onChange={v => setField('APD_MODEL', v)}
+                        placeholder="apd_640"
+                        models={tritonModels}
+                      />
                     </FormField>
                     <FormField label="Confidence (0.0–1.0)">
                       <Input type="number" step="0.05" min="0" max="1" value={env.APD_CONFIDENCE || '0.3'} onChange={e => setField('APD_CONFIDENCE', e.target.value)} />
                     </FormField>
                     <FormField label="Tag">
-                      <Select value={env.APD_TAG || 'alarm'} onValueChange={v => v && setField('APD_TAG', v)}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="info">info</SelectItem>
-                          <SelectItem value="alarm">alarm</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <TagSelect value={env.APD_TAG || 'alarm'} onChange={v => setField('APD_TAG', v)} />
                     </FormField>
                   </div>
                 )}
@@ -451,41 +452,21 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
                 {env.FIRE_SMOKE_ENABLED === 'true' && (
                   <div className="grid grid-cols-2 gap-4">
                     <FormField label="Model">
-                      {tritonModels.length > 0 ? (
-                        <Select value={env.FIRE_SMOKE_MODEL || ''} onValueChange={v => v && setField('FIRE_SMOKE_MODEL', v)}>
-                          <SelectTrigger><SelectValue placeholder="Select a model" /></SelectTrigger>
-                          <SelectContent>
-                            {tritonModels.map(m => (
-                              <SelectItem key={m.name} value={m.name}>
-                                {m.name} {m.state === 'READY' ? '● ready' : m.state === 'OFFLINE' ? '○ triton offline' : `(${m.state.toLowerCase()})`}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      ) : (
-                        <Input value={env.FIRE_SMOKE_MODEL || ''} onChange={e => setField('FIRE_SMOKE_MODEL', e.target.value)} placeholder="fire_smoke_640" />
-                      )}
+                      <ModelSelect
+                        value={env.FIRE_SMOKE_MODEL || ''}
+                        onChange={v => setField('FIRE_SMOKE_MODEL', v)}
+                        placeholder="fire_smoke_640"
+                        models={tritonModels}
+                      />
                     </FormField>
                     <FormField label="Confidence (0.0–1.0)">
                       <Input type="number" step="0.05" min="0" max="1" value={env.FIRE_SMOKE_CONFIDENCE || '0.3'} onChange={e => setField('FIRE_SMOKE_CONFIDENCE', e.target.value)} />
                     </FormField>
                     <FormField label="Fire Tag">
-                      <Select value={env.FIRE_TAG || 'alarm'} onValueChange={v => v && setField('FIRE_TAG', v)}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="info">info</SelectItem>
-                          <SelectItem value="alarm">alarm</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <TagSelect value={env.FIRE_TAG || 'alarm'} onChange={v => setField('FIRE_TAG', v)} />
                     </FormField>
                     <FormField label="Smoke Tag">
-                      <Select value={env.SMOKE_TAG || 'alarm'} onValueChange={v => v && setField('SMOKE_TAG', v)}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="info">info</SelectItem>
-                          <SelectItem value="alarm">alarm</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <TagSelect value={env.SMOKE_TAG || 'alarm'} onChange={v => setField('SMOKE_TAG', v)} />
                     </FormField>
                     <FormField label="Cooldown (minutes)">
                       <Input type="number" min="1" value={env.FIRE_SMOKE_COOLDOWN_MINUTES || '5'} onChange={e => setField('FIRE_SMOKE_COOLDOWN_MINUTES', e.target.value)} />

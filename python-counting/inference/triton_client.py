@@ -105,12 +105,23 @@ class TritonYoloClient:
                 pass
             self._client = None
 
-    def infer(self, frame_bgr: np.ndarray) -> np.ndarray:
-        """Detect persons in a BGR frame. Returns [N, 6] x1,y1,x2,y2,conf,cls in frame pixels."""
+    def infer(self, frame_bgr: np.ndarray, pre_cache: dict | None = None) -> np.ndarray:
+        """Detect persons in a BGR frame. Returns [N, 6] x1,y1,x2,y2,conf,cls in frame pixels.
+
+        pre_cache: optional per-frame dict shared across clients — clients whose
+        (input_shape, dtype) match reuse the same preprocessed tensor instead of
+        re-letterboxing the identical frame once per model.
+        """
         if self._client is None:
             self.connect()
 
-        tensor, ratio, pad = preprocess(frame_bgr, self.input_shape, self.input_dtype)
+        cache_key = (self.input_shape, np.dtype(self.input_dtype).name)
+        if pre_cache is not None and cache_key in pre_cache:
+            tensor, ratio, pad = pre_cache[cache_key]
+        else:
+            tensor, ratio, pad = preprocess(frame_bgr, self.input_shape, self.input_dtype)
+            if pre_cache is not None:
+                pre_cache[cache_key] = (tensor, ratio, pad)
         triton_dtype = "FP16" if self.input_dtype == np.float16 else "FP32"
         infer_input = grpcclient.InferInput(self.input_name, list(tensor.shape), triton_dtype)
         infer_input.set_data_from_numpy(tensor)

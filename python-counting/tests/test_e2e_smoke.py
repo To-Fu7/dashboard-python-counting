@@ -29,7 +29,7 @@ class LocalYoloClient:
         self._model = YOLO('yolo11n.pt')
         self.calls = 0
 
-    def infer(self, frame_bgr):
+    def infer(self, frame_bgr, pre_cache=None):
         from inference.preprocessing import preprocess
         from inference.postprocessing import decode_raw, unletterbox
         self.calls += 1

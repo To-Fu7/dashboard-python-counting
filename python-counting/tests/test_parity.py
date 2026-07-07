@@ -8,27 +8,10 @@ used to prove the numpy reimplementation is bit-compatible before rollout.
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-# Minimal env so counting_config imports without a real .env
-os.environ.setdefault('SCREEN_RESOLUTION', '[800, 600]')
-os.environ.setdefault('lineA', '[(351, 51), (381, 207)]')
-os.environ.setdefault('DEBUG_MODE', 'true')
+from testutil import check, finish  # bootstraps sys.path + base env vars
 
 import cv2
 import numpy as np
-
-PASS = FAIL = 0
-
-
-def check(name, cond, detail=""):
-    global PASS, FAIL
-    if cond:
-        PASS += 1
-        print(f"  PASS  {name}")
-    else:
-        FAIL += 1
-        print(f"  FAIL  {name} {detail}")
 
 
 def get_test_frame():
@@ -182,5 +165,4 @@ if __name__ == '__main__':
     test_unletterbox_parity(frame)
     test_tracker_parity(frame)
     test_module_imports()
-    print(f"\n{PASS} passed, {FAIL} failed")
-    sys.exit(1 if FAIL else 0)
+    finish()

@@ -52,7 +52,7 @@ SCHEMA_STATEMENTS = [
         device_id UUID NOT NULL,
         device_code TEXT NOT NULL,
         device_name TEXT,
-        detection_type TEXT NOT NULL CHECK (detection_type IN ('apd', 'fire', 'smoke')),
+        detection_type TEXT NOT NULL,
         tag TEXT NOT NULL CHECK (tag IN ('info', 'alarm')),
         label TEXT NOT NULL,
         track_id INTEGER,
