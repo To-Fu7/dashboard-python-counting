@@ -94,7 +94,40 @@ def test_firesmoke_cooldown():
     check("non fire/smoke labels are ignored", len(calls) == 0, f"calls={calls}")
 
 
+def test_per_type_mqtt_topics():
+    print("[3] Per-type MQTT topics (Part C)")
+    import app_state as state
+    import counting_config as cfg
+    from detection import apd, firesmoke
+
+    calls = []
+    apd.increment_hourly = lambda *a, **k: None
+    apd.send_detection_event_mqtt = lambda *a, **k: calls.append(k)
+    firesmoke.increment_hourly = lambda *a, **k: None
+    firesmoke.send_detection_event_mqtt = lambda *a, **k: calls.append(k)
+
+    state.apd_alerted_tracks.clear()
+    state.apd_unique_this_hour.clear()
+    state.firesmoke_last_alert.clear()
+
+    apd.process_detection(101, 'no_helmet', 0.8, (0, 0, 10, 10), _fake_frame())
+    check("APD publishes to MQTT_APD_TOPIC, not the shared MQTT_TOPIC",
+          calls[-1].get('topic') == cfg.MQTT_APD_TOPIC and calls[-1].get('topic') != cfg.MQTT_TOPIC,
+          f"topic={calls[-1].get('topic')}")
+
+    calls.clear()
+    firesmoke.process_detection('fire', 0.9, _fake_frame())
+    check("Fire/Smoke publishes to MQTT_FIRESMOKE_TOPIC, not the shared MQTT_TOPIC",
+          calls[-1].get('topic') == cfg.MQTT_FIRESMOKE_TOPIC and calls[-1].get('topic') != cfg.MQTT_TOPIC,
+          f"topic={calls[-1].get('topic')}")
+
+    check("APD and Fire/Smoke topics are distinct from each other",
+          cfg.MQTT_APD_TOPIC != cfg.MQTT_FIRESMOKE_TOPIC,
+          f"apd={cfg.MQTT_APD_TOPIC} firesmoke={cfg.MQTT_FIRESMOKE_TOPIC}")
+
+
 if __name__ == '__main__':
     test_apd_dedup()
     test_firesmoke_cooldown()
+    test_per_type_mqtt_topics()
     finish()

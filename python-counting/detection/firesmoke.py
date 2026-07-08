@@ -28,4 +28,5 @@ def process_detection(label, confidence, frame):
     logging.info(f"{label.upper()} detected, conf={confidence:.2f} (tag={tag})")
     increment_hourly('firesmoke_hourly', cfg.device_id, cfg.device_code, cfg.device_name,
                       state.current_tracking_hour, label)
-    send_detection_event_mqtt(frame, label, tag, label, confidence, track_id=None)
+    send_detection_event_mqtt(frame, label, tag, label, confidence,
+                               track_id=None, topic=cfg.MQTT_FIRESMOKE_TOPIC)

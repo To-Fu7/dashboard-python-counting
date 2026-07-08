@@ -341,6 +341,15 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
               <FormField label="Daily Send Time">
                 <Input value={env.DAILY_SEND_TIME || '23:59'} onChange={e => setField('DAILY_SEND_TIME', e.target.value)} placeholder="23:59" />
               </FormField>
+              <FormField label="APD Topic">
+                <Input value={env.MQTT_APD_TOPIC || ''} onChange={e => setField('MQTT_APD_TOPIC', e.target.value)} />
+              </FormField>
+              <FormField label="Fire/Smoke Topic">
+                <Input value={env.MQTT_FIRESMOKE_TOPIC || ''} onChange={e => setField('MQTT_FIRESMOKE_TOPIC', e.target.value)} />
+              </FormField>
+              <FormField label="Face Topic">
+                <Input value={env.MQTT_FACE_TOPIC || ''} onChange={e => setField('MQTT_FACE_TOPIC', e.target.value)} />
+              </FormField>
             </div>
           </Section>
 
@@ -470,6 +479,51 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
                     </FormField>
                     <FormField label="Cooldown (minutes)">
                       <Input type="number" min="1" value={env.FIRE_SMOKE_COOLDOWN_MINUTES || '5'} onChange={e => setField('FIRE_SMOKE_COOLDOWN_MINUTES', e.target.value)} />
+                    </FormField>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-3 rounded-md border border-border p-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">Face Detection (Insider/Intruder)</span>
+                  <Switch
+                    checked={env.FACE_ENABLED === 'true'}
+                    onCheckedChange={v => setField('FACE_ENABLED', v ? 'true' : 'false')}
+                  />
+                </div>
+                {env.FACE_ENABLED === 'true' && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField label="Face Detector Model">
+                      <ModelSelect
+                        value={env.FACE_MODEL || ''}
+                        onChange={v => setField('FACE_MODEL', v)}
+                        placeholder="face_640"
+                        models={tritonModels}
+                      />
+                    </FormField>
+                    <FormField label="Face Embedding Model">
+                      <ModelSelect
+                        value={env.FACE_EMBED_MODEL || ''}
+                        onChange={v => setField('FACE_EMBED_MODEL', v)}
+                        placeholder="arcface_112"
+                        models={tritonModels}
+                      />
+                    </FormField>
+                    <FormField label="Confidence (0.0–1.0)">
+                      <Input type="number" step="0.05" min="0" max="1" value={env.FACE_CONFIDENCE || '0.5'} onChange={e => setField('FACE_CONFIDENCE', e.target.value)} />
+                    </FormField>
+                    <FormField label="Match Threshold (0.0–1.0)">
+                      <Input type="number" step="0.05" min="0" max="1" value={env.FACE_MATCH_THRESHOLD || '0.5'} onChange={e => setField('FACE_MATCH_THRESHOLD', e.target.value)} />
+                    </FormField>
+                    <FormField label="Insider Tag">
+                      <TagSelect value={env.INSIDER_TAG || 'info'} onChange={v => setField('INSIDER_TAG', v)} />
+                    </FormField>
+                    <FormField label="Intruder Tag">
+                      <TagSelect value={env.INTRUDER_TAG || 'alarm'} onChange={v => setField('INTRUDER_TAG', v)} />
+                    </FormField>
+                    <FormField label="Cache Refresh (minutes)">
+                      <Input type="number" min="1" value={env.FACE_CACHE_REFRESH_MINUTES || '10'} onChange={e => setField('FACE_CACHE_REFRESH_MINUTES', e.target.value)} />
                     </FormField>
                   </div>
                 )}

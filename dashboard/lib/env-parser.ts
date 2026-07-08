@@ -41,6 +41,12 @@ export function deriveTritonModel(yoloModel: string | undefined, imgsz = 640): s
   return `${stem}_${imgsz}`;
 }
 
+/** Per-type MQTT topic default: a subpath of the device's base MQTT_TOPIC,
+ *  e.g. '/person_in/CAM1' + 'apd' -> '/person_in/CAM1/apd'. */
+export function deriveTopic(mqttTopic: string | undefined, suffix: string): string {
+  return `${mqttTopic ?? '/person_in'}/${suffix}`;
+}
+
 export function readDeviceEnv(deviceCode: string): DeviceEnvConfig | null {
   const filePath = getEnvFilePath(deviceCode);
   if (!fs.existsSync(filePath)) return null;
@@ -80,6 +86,9 @@ export function writeDeviceEnv(deviceCode: string, config: Partial<DeviceEnvConf
     `MQTT_INTERVAL_TOPIC=${config.MQTT_INTERVAL_TOPIC ?? ''}`,
     `MQTT_INTERVAL_MINUTES=${config.MQTT_INTERVAL_MINUTES ?? '5'}`,
     `DAILY_SEND_TIME=${config.DAILY_SEND_TIME ?? '23:59'}`,
+    `MQTT_APD_TOPIC=${config.MQTT_APD_TOPIC ?? deriveTopic(config.MQTT_TOPIC, 'apd')}`,
+    `MQTT_FIRESMOKE_TOPIC=${config.MQTT_FIRESMOKE_TOPIC ?? deriveTopic(config.MQTT_TOPIC, 'firesmoke')}`,
+    `MQTT_FACE_TOPIC=${config.MQTT_FACE_TOPIC ?? deriveTopic(config.MQTT_TOPIC, 'face')}`,
     '',
     '# STREAM',
     `RTSP_URL=${config.RTSP_URL ?? ''}`,
@@ -111,6 +120,14 @@ export function writeDeviceEnv(deviceCode: string, config: Partial<DeviceEnvConf
     `FIRE_TAG=${config.FIRE_TAG ?? 'alarm'}`,
     `SMOKE_TAG=${config.SMOKE_TAG ?? 'alarm'}`,
     `FIRE_SMOKE_COOLDOWN_MINUTES=${config.FIRE_SMOKE_COOLDOWN_MINUTES ?? '5'}`,
+    `FACE_ENABLED=${config.FACE_ENABLED ?? 'false'}`,
+    `FACE_MODEL=${config.FACE_MODEL ?? ''}`,
+    `FACE_EMBED_MODEL=${config.FACE_EMBED_MODEL ?? ''}`,
+    `FACE_CONFIDENCE=${config.FACE_CONFIDENCE ?? '0.5'}`,
+    `FACE_MATCH_THRESHOLD=${config.FACE_MATCH_THRESHOLD ?? '0.5'}`,
+    `FACE_CACHE_REFRESH_MINUTES=${config.FACE_CACHE_REFRESH_MINUTES ?? '10'}`,
+    `INSIDER_TAG=${config.INSIDER_TAG ?? 'info'}`,
+    `INTRUDER_TAG=${config.INTRUDER_TAG ?? 'alarm'}`,
     '',
     '# DETECTION',
     `DETECTION_MODE=${config.DETECTION_MODE ?? 'line_crossing'}`,

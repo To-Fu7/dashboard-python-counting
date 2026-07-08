@@ -34,4 +34,5 @@ def process_detection(track_id, label, confidence, box, frame):
         increment_hourly('apd_hourly', cfg.device_id, cfg.device_code, cfg.device_name,
                           state.current_tracking_hour, 'unique_persons')
 
-    send_detection_event_mqtt(crop, 'apd', cfg.APD_TAG, label, confidence, track_id=track_id)
+    send_detection_event_mqtt(crop, 'apd', cfg.APD_TAG, label, confidence,
+                               track_id=track_id, topic=cfg.MQTT_APD_TOPIC)

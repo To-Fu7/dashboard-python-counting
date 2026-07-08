@@ -44,3 +44,8 @@ apd_unique_this_hour = set()
 
 # Fire/Smoke cooldown: label -> last alert datetime
 firesmoke_last_alert = {}
+
+# Face recognition: track_ids already alerted (insider-with-name or intruder)
+# for the life of that track — one verdict per track, ever (persists until
+# tracker reset, same as apd_alerted_tracks).
+face_alerted_tracks = set()

@@ -167,3 +167,46 @@ def db_fetch(sql, params=(), commit=False, max_retry=3):
 
     logging.error("DB fetch failed after max retries.")
     return None
+
+
+def db_fetch_all(sql, params=(), max_retry=3):
+    """Fetch every matching row (fetchall), same retry semantics as db_fetch.
+    Returns [] in DEBUG_MODE or after exhausting retries — an empty result
+    set, not an error signal, since callers (e.g. the face cache loader)
+    treat 'no rows' as a normal, valid state."""
+    global pg_conn, cursor
+
+    if cfg.DEBUG_MODE:
+        logging.info(f"DEBUG_MODE: Skipping DB fetch_all: {sql}")
+        return []
+
+    retry = 0
+    while retry < max_retry:
+        try:
+            cursor.execute(sql, params)
+            return cursor.fetchall()
+        except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+            logging.error(f"Database lost connection: {e} (retry {retry+1}/{max_retry})")
+            try:
+                cursor.close()
+                pg_conn.close()
+            except Exception:
+                pass
+            pg_conn, cursor = db_get_cursor()
+            if not cursor:
+                logging.error("Reconnection to DB failed.")
+                time.sleep(2)
+                retry += 1
+                continue
+        except Exception as e:
+            logging.error(f"DB Error (not connection): {e}")
+            try:
+                pg_conn.rollback()
+            except Exception:
+                pass
+            time.sleep(2)
+            retry += 1
+            continue
+
+    logging.error("DB fetch_all failed after max retries.")
+    return []

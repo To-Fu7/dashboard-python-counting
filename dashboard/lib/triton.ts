@@ -49,6 +49,44 @@ export async function getModelConfig(name: string): Promise<Record<string, unkno
   return (await res.json()) as Record<string, unknown>;
 }
 
+interface TritonMetadataTensor {
+  name: string;
+  datatype: string;
+  shape: number[];
+}
+
+export async function getModelMetadata(name: string): Promise<{ inputs: TritonMetadataTensor[]; outputs: TritonMetadataTensor[] }> {
+  const res = await tritonFetch(`/v2/models/${encodeURIComponent(name)}`);
+  if (!res.ok) throw new Error(`model metadata failed: ${res.status}`);
+  return (await res.json()) as { inputs: TritonMetadataTensor[]; outputs: TritonMetadataTensor[] };
+}
+
+/** Embed a face crop (already resized/normalized to CHW float32) via Triton's
+ *  HTTP v2 inference API. Input/output tensor names and shape are discovered
+ *  from model metadata (same auto-detect approach as the Python TritonEmbedClient)
+ *  rather than hardcoded, so this works with any ArcFace-shaped model. */
+export async function embedFace(modelName: string, chwFloatData: Float32Array, shape: [number, number, number, number]): Promise<number[]> {
+  const meta = await getModelMetadata(modelName);
+  const input = meta.inputs[0];
+  const output = meta.outputs[0];
+  if (!input || !output) throw new Error(`Model '${modelName}' has no inputs/outputs in its metadata`);
+
+  const res = await tritonFetch(`/v2/models/${encodeURIComponent(modelName)}/infer`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      inputs: [{ name: input.name, shape, datatype: 'FP32', data: Array.from(chwFloatData) }],
+      outputs: [{ name: output.name }],
+    }),
+  });
+  if (!res.ok) throw new Error(`ArcFace inference failed: ${res.status} ${await res.text()}`);
+
+  const json = (await res.json()) as { outputs: { name: string; data: number[] }[] };
+  const out = json.outputs.find(o => o.name === output.name) ?? json.outputs[0];
+  if (!out) throw new Error('ArcFace inference response had no outputs');
+  return out.data;
+}
+
 export async function loadModel(name: string): Promise<void> {
   const res = await tritonFetch(`/v2/repository/models/${encodeURIComponent(name)}/load`, { method: 'POST' });
   if (!res.ok) throw new Error(`model load failed: ${res.status} ${await res.text()}`);

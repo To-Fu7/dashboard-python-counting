@@ -52,9 +52,11 @@ def shutdown_mqtt():
         mqtt_client.disconnect()
 
 
-def _publish_image_event(image, extra_fields, log_label):
+def _publish_image_event(image, extra_fields, log_label, topic=None):
     """Shared guard/encode/publish path for image-carrying MQTT events.
-    extra_fields are merged into the common device/timestamp envelope."""
+    extra_fields are merged into the common device/timestamp envelope.
+    topic defaults to cfg.MQTT_TOPIC (person-counting's shared topic);
+    per-type detectors pass their own resolved topic (Part C)."""
     if cfg.DEBUG_MODE:
         logging.info(f"DEBUG_MODE: Skipping MQTT send for {log_label}")
         return
@@ -75,7 +77,7 @@ def _publish_image_event(image, extra_fields, log_label):
             "image": base64.b64encode(buffer.tobytes()).decode('utf-8'),
         }
 
-        result = mqtt_client.publish(cfg.MQTT_TOPIC, json.dumps(payload), qos=1)
+        result = mqtt_client.publish(topic or cfg.MQTT_TOPIC, json.dumps(payload), qos=1)
         if result.rc == mqtt.MQTT_ERR_SUCCESS:
             logging.info(f"{log_label} sent via MQTT")
         else:
@@ -98,9 +100,10 @@ def send_person_in_mqtt(cropped_image, record_id, event_type="person_in"):
     )
 
 
-def send_detection_event_mqtt(image, detection_type, tag, label, confidence, track_id=None):
-    """Publish an APD/fire/smoke event. Reuses MQTT_TOPIC (distinguished by
-    the 'type' field) rather than a separate topic, per design decision."""
+def send_detection_event_mqtt(image, detection_type, tag, label, confidence, track_id=None, topic=None):
+    """Publish an APD/fire/smoke/face event to its own per-type topic
+    (Part C) — caller passes cfg.MQTT_APD_TOPIC / MQTT_FIRESMOKE_TOPIC /
+    MQTT_FACE_TOPIC; falls back to cfg.MQTT_TOPIC if topic is omitted."""
     _publish_image_event(
         image,
         {
@@ -112,6 +115,7 @@ def send_detection_event_mqtt(image, detection_type, tag, label, confidence, tra
             "track_id": track_id,
         },
         f"{detection_type} event (label={label}, conf={confidence:.2f})",
+        topic=topic,
     )
 
 

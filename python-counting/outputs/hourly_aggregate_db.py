@@ -11,7 +11,7 @@ import logging
 
 from outputs.db_worker import db_query, db_queue_write
 
-VALID_HOURLY_TABLES = ('apd_hourly', 'firesmoke_hourly')
+VALID_HOURLY_TABLES = ('apd_hourly', 'firesmoke_hourly', 'face_hourly')
 
 
 def increment_hourly(table, device_id, device_code, device_name, hour_start, label):

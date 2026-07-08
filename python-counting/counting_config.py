@@ -271,6 +271,24 @@ if FIRE_SMOKE_ENABLED and not FIRE_SMOKE_MODEL:
     logging.warning("FIRE_SMOKE_ENABLED=true but FIRE_SMOKE_MODEL is not set — Fire/Smoke detection will be disabled")
     FIRE_SMOKE_ENABLED = False
 
+FACE_ENABLED = os.getenv('FACE_ENABLED', 'false').lower() == 'true'
+FACE_MODEL = os.getenv('FACE_MODEL', '')  # YOLOv8-face detector, Triton model repo name
+FACE_EMBED_MODEL = os.getenv('FACE_EMBED_MODEL', '')  # ArcFace embedder, Triton model repo name
+FACE_CONFIDENCE = float(os.getenv('FACE_CONFIDENCE', 0.5))
+FACE_MATCH_THRESHOLD = float(os.getenv('FACE_MATCH_THRESHOLD', 0.5))  # min cosine similarity to call it a match
+FACE_CACHE_REFRESH_MINUTES = float(os.getenv('FACE_CACHE_REFRESH_MINUTES', 10))
+INSIDER_TAG = os.getenv('INSIDER_TAG', 'info')
+INTRUDER_TAG = os.getenv('INTRUDER_TAG', 'alarm')
+if FACE_ENABLED and not (FACE_MODEL and FACE_EMBED_MODEL):
+    logging.warning("FACE_ENABLED=true but FACE_MODEL/FACE_EMBED_MODEL not both set — Face detection will be disabled")
+    FACE_ENABLED = False
+
+# Per-type MQTT topics — each defaults to a subpath of the base MQTT_TOPIC but
+# is independently overridable (dashboard: Basic Settings → MQTT Topics).
+MQTT_APD_TOPIC = os.getenv('MQTT_APD_TOPIC', f"{MQTT_TOPIC}/apd")
+MQTT_FIRESMOKE_TOPIC = os.getenv('MQTT_FIRESMOKE_TOPIC', f"{MQTT_TOPIC}/firesmoke")
+MQTT_FACE_TOPIC = os.getenv('MQTT_FACE_TOPIC', f"{MQTT_TOPIC}/face")
+
 for _dep in ('YOLO_IMGSZ', 'ENABLE_NVDEC', 'YOLO_DEVICE'):
     if os.getenv(_dep):
         logging.warning(

@@ -122,6 +122,17 @@ export default function SettingsPage() {
               Model repository name assigned to newly created cameras.
             </p>
           </FormField>
+          <FormField label="Face Embedding Model (ArcFace)">
+            <Input
+              value={settings.triton.faceEmbedModel}
+              onChange={e => setTriton('faceEmbedModel', e.target.value)}
+              placeholder="arcface_112"
+            />
+            <p className="text-xs text-muted-foreground">
+              Used to embed photos on the Face Enrollment page — must match cameras&apos; FACE_EMBED_MODEL,
+              since enrollment and runtime embeddings must live in the same vector space to compare.
+            </p>
+          </FormField>
         </div>
       </Section>
 
@@ -239,6 +250,21 @@ export default function SettingsPage() {
           </FormField>
           <FormField label="Fire/Smoke Cooldown (minutes)">
             <Input type="number" min="1" value={settings.defaults.fire_smoke_cooldown_minutes} onChange={e => setDefault('fire_smoke_cooldown_minutes', e.target.value)} />
+          </FormField>
+          <FormField label="Face Confidence">
+            <Input type="number" step="0.05" min="0" max="1" value={settings.defaults.face_confidence} onChange={e => setDefault('face_confidence', e.target.value)} />
+          </FormField>
+          <FormField label="Face Match Threshold">
+            <Input type="number" step="0.05" min="0" max="1" value={settings.defaults.face_match_threshold} onChange={e => setDefault('face_match_threshold', e.target.value)} />
+          </FormField>
+          <FormField label="Insider Tag">
+            <TagSelect value={settings.defaults.insider_tag} onChange={v => setDefault('insider_tag', v)} />
+          </FormField>
+          <FormField label="Intruder Tag">
+            <TagSelect value={settings.defaults.intruder_tag} onChange={v => setDefault('intruder_tag', v)} />
+          </FormField>
+          <FormField label="Face Cache Refresh (minutes)">
+            <Input type="number" min="1" value={settings.defaults.face_cache_refresh_minutes} onChange={e => setDefault('face_cache_refresh_minutes', e.target.value)} />
           </FormField>
         </div>
       </Section>

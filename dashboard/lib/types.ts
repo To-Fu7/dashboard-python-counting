@@ -35,6 +35,17 @@ export interface DeviceEnvConfig {
   FIRE_TAG?: string;               // 'info' | 'alarm'
   SMOKE_TAG?: string;              // 'info' | 'alarm'
   FIRE_SMOKE_COOLDOWN_MINUTES?: string;
+  FACE_ENABLED?: string;
+  FACE_MODEL?: string;             // YOLOv8-face detector, Triton model repo name
+  FACE_EMBED_MODEL?: string;       // ArcFace embedder, Triton model repo name
+  FACE_CONFIDENCE?: string;
+  FACE_MATCH_THRESHOLD?: string;   // min cosine similarity to call it a match
+  FACE_CACHE_REFRESH_MINUTES?: string;
+  INSIDER_TAG?: string;            // 'info' | 'alarm'
+  INTRUDER_TAG?: string;           // 'info' | 'alarm'
+  MQTT_APD_TOPIC?: string;
+  MQTT_FIRESMOKE_TOPIC?: string;
+  MQTT_FACE_TOPIC?: string;
   JPEG_QUALITY: string;
   FPS_LIMIT: string;
   FRAME_SKIP: string;
@@ -94,6 +105,7 @@ export type HardwareMode = 'jetson' | 'server' | 'cpu';
 export interface TritonSettings {
   imageTag: string;       // tritonserver release, e.g. '24.08' (suffix -py3/-py3-igpu is derived from hardware mode)
   defaultModel: string;   // model repository name used for new devices, e.g. 'yolo26m_640'
+  faceEmbedModel: string; // ArcFace model repo name used to embed enrollment photos (must match cameras' FACE_EMBED_MODEL)
 }
 
 export interface GlobalSettings {
@@ -130,6 +142,11 @@ export interface GlobalSettings {
     fire_tag: string;
     smoke_tag: string;
     fire_smoke_cooldown_minutes: string;
+    face_confidence: string;
+    face_match_threshold: string;
+    insider_tag: string;
+    intruder_tag: string;
+    face_cache_refresh_minutes: string;
   };
 }
 
@@ -139,6 +156,7 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
   triton: {
     imageTag: '24.08',
     defaultModel: 'yolo26m_640',
+    faceEmbedModel: '',
   },
   pg: {
     host: 'host.docker.internal',
@@ -170,5 +188,10 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
     fire_tag: 'alarm',
     smoke_tag: 'alarm',
     fire_smoke_cooldown_minutes: '5',
+    face_confidence: '0.5',
+    face_match_threshold: '0.5',
+    insider_tag: 'info',
+    intruder_tag: 'alarm',
+    face_cache_refresh_minutes: '10',
   },
 };

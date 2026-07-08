@@ -1,6 +1,6 @@
 """One-stop database provisioning: creates person_inout, inout_resample,
-apd_hourly, and firesmoke_hourly if they don't already exist. Safe to run
-repeatedly.
+apd_hourly, firesmoke_hourly, face_hourly, and known_faces if they don't
+already exist. Safe to run repeatedly.
 
 Usage:  python init_db.py
 Reads the same PG_* environment variables as main.py (via a .env file or the
@@ -71,6 +71,29 @@ SCHEMA_STATEMENTS = [
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_firesmoke_hourly_device_time ON firesmoke_hourly (device_id, hour_start DESC)",
+    """
+    CREATE TABLE IF NOT EXISTS face_hourly (
+        device_id UUID NOT NULL,
+        device_code TEXT NOT NULL,
+        device_name TEXT,
+        hour_start TIMESTAMPTZ NOT NULL,
+        data JSONB NOT NULL DEFAULT '{}',
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE (device_id, hour_start)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_face_hourly_device_time ON face_hourly (device_id, hour_start DESC)",
+    """
+    CREATE TABLE IF NOT EXISTS known_faces (
+        id UUID PRIMARY KEY,
+        person_name TEXT NOT NULL,
+        embedding REAL[] NOT NULL,
+        source_photo_path TEXT,
+        variant_type TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_known_faces_person ON known_faces (person_name)",
 ]
 
 
@@ -83,7 +106,10 @@ def main():
             for stmt in SCHEMA_STATEMENTS:
                 cur.execute(stmt)
                 logging.info(f"OK: {stmt.strip().splitlines()[0].strip()}")
-        logging.info("Schema is up to date (person_inout, inout_resample, apd_hourly, firesmoke_hourly).")
+        logging.info(
+            "Schema is up to date (person_inout, inout_resample, apd_hourly, "
+            "firesmoke_hourly, face_hourly, known_faces)."
+        )
     finally:
         conn.close()
 
