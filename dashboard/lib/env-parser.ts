@@ -163,6 +163,22 @@ export function writeDeviceEnv(deviceCode: string, config: Partial<DeviceEnvConf
     }
   }
 
+  // Write apdZone*/faceZone* keys — restriction zones for APD/Face detection,
+  // independent of DETECTION_MODE (see counting_config.APD_EFFECTIVE_ZONES /
+  // FACE_EFFECTIVE_ZONES on the Python side for the fallback rule).
+  const apdZoneKeys = Object.keys(config).filter(k => /^apdZone[A-Z]$/.test(k)).sort();
+  const faceZoneKeys = Object.keys(config).filter(k => /^faceZone[A-Z]$/.test(k)).sort();
+  if (apdZoneKeys.length > 0 || faceZoneKeys.length > 0) {
+    lines.push('');
+    lines.push('# APD/FACE RESTRICTION ZONES');
+    for (const key of apdZoneKeys) {
+      if (config[key]) lines.push(`${key}=${config[key]}`);
+    }
+    for (const key of faceZoneKeys) {
+      if (config[key]) lines.push(`${key}=${config[key]}`);
+    }
+  }
+
   lines.push('');
   fs.writeFileSync(filePath, lines.join('\n'), 'utf-8');
 }

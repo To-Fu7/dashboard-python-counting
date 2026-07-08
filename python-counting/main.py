@@ -213,6 +213,19 @@ def reset_apd_state(apd_tracker):
     state.apd_unique_this_hour.clear()
 
 
+def _center_in_any_zone(cx, cy, zones):
+    """zones: list of {'polygon': np.ndarray} (counting_config.load_zones_from_env
+    shape). Empty list means unrestricted — every detector falls back to this
+    when it has no zone of its own and none is inherited (see
+    counting_config.APD_EFFECTIVE_ZONES / FACE_EFFECTIVE_ZONES)."""
+    if not zones:
+        return True
+    for z in zones:
+        if cv2.pointPolygonTest(z['polygon'], (float(cx), float(cy)), False) >= 0:
+            return True
+    return False
+
+
 def reset_face_state(face_tracker):
     """Tracker reset and dedup-state clear must always happen together — a
     reset tracker reuses track ids, so a stale entry would suppress a fresh
@@ -521,6 +534,8 @@ def main():
                     ay1 += cfg.CROP_Y1
                     ax2 += cfg.CROP_X1
                     ay2 += cfg.CROP_Y1
+                    if not _center_in_any_zone((ax1 + ax2) // 2, (ay1 + ay2) // 2, cfg.APD_EFFECTIVE_ZONES):
+                        continue  # outside the APD restriction zone — not a violation here
                     if draw_now:
                         cv2.rectangle(frame, (ax1, ay1), (ax2, ay2), (0, 165, 255), 2)
                         cv2.putText(frame, label, (ax1, max(0, ay1 - 6)),
@@ -563,6 +578,8 @@ def main():
                     fy1 += cfg.CROP_Y1
                     fx2 += cfg.CROP_X1
                     fy2 += cfg.CROP_Y1
+                    if not _center_in_any_zone((fx1 + fx2) // 2, (fy1 + fy2) // 2, cfg.FACE_EFFECTIVE_ZONES):
+                        continue  # outside the Face restriction zone — skip the (costly) embed call
                     try:
                         # "Zoom" first: margin-expanded, upscaled crop — small
                         # CCTV faces embedded raw match poorly (see crop_face).

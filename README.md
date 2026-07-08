@@ -329,6 +329,34 @@ kemudian.
 > implementasi referensi lama — TIDAK dipakai pipeline baru, dibiarkan sebagai
 > arsip.
 
+### 5.5 APD / Face Restriction Zone
+
+APD dan Face masing-masing bisa dibatasi ke area tertentu di frame,
+independen dari `DETECTION_MODE` yang dipakai person counting (mis. tetap
+`line_crossing`, tapi APD hanya aktif di dalam area konstruksi). Digambar di
+device page → tab **Line Configuration**, muncul di bawah gambar
+line/zone utama saat APD atau Face Detection diaktifkan.
+
+**Cara resolusi zone** (di `counting_config.py`, `APD_EFFECTIVE_ZONES` /
+`FACE_EFFECTIVE_ZONES`):
+
+1. Kalau `apdZoneA..`/`faceZoneA..` digambar sendiri → dipakai, apa pun
+   `DETECTION_MODE`-nya.
+2. Kalau tidak digambar DAN `DETECTION_MODE=zone` → ikut zone person-counting
+   yang sudah ada (`zoneA..`) — tidak perlu gambar ulang.
+3. Kalau tidak digambar DAN `DETECTION_MODE=line_crossing` → **tidak ada
+   zone default untuk di-inherit** → detektor jalan tanpa batasan (seluruh
+   crop area). Kalau mau membatasi APD/Face sementara mode utama tetap
+   `line_crossing`, zone-nya **wajib** digambar sendiri di section masing-masing.
+
+Deteksi yang titik tengahnya di luar semua zone efektif langsung di-skip
+(tidak masuk hitungan `apd_hourly`/`face_hourly`, tidak MQTT, dan untuk Face —
+tidak sampai memanggil ArcFace sama sekali, jadi tidak ada biaya inference
+sia-sia di luar zone).
+
+**Env**: `apdZoneA`, `apdZoneB`, ... / `faceZoneA`, `faceZoneB`, ... — format
+polygon sama seperti `zoneA` (`[(x1,y1),(x2,y2),(x3,y3),...]`, ≥3 titik).
+
 ---
 
 ## 6. MQTT
@@ -360,6 +388,7 @@ Di-manage dashboard; ditulis ulang tiap save device. Kelompok penting:
 - **Inference**: `TRITON_MODEL` (mis. `yolo26m_640`), `YOLO_CONFIDENCE`, `YOLO_IOU` — `TRITON_URL` di-inject compose (`triton:8001`)
 - **Counting**: `DETECTION_MODE` (`line_crossing`/`zone`), `lineA..`/`zoneA..`, `POINT_AXIS`, `SWAP_IN_OUT`, `MERGE_GATES`
 - **Additional detection**: blok `APD_*`, `FIRE_SMOKE_*`/`FIRE_TAG`/`SMOKE_TAG`, `FACE_*`/`INSIDER_TAG`/`INTRUDER_TAG`
+- **APD/Face restriction zone**: `apdZoneA..`/`faceZoneA..` (polygon, format sama seperti `zoneA`) — lihat §5.5
 - **Deprecated** (warn lalu diabaikan): `YOLO_MODEL` (dipetakan otomatis ke `TRITON_MODEL`), `YOLO_IMGSZ`, `ENABLE_NVDEC`, `YOLO_DEVICE`
 
 ---

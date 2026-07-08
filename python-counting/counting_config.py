@@ -174,23 +174,26 @@ def load_line_pairs_from_env():
     return line_pairs
 
 
-def load_zones_from_env():
-    """Load polygon zones from environment variables (zoneA, zoneB, ...)."""
+def load_zones_from_env(prefix='zone'):
+    """Load polygon zones from environment variables (<prefix>A, <prefix>B, ...).
+    Same lettered-suffix scheme as the person-counting zones (zoneA, zoneB),
+    reused with a different prefix for the APD/Face restriction zones
+    (apdZoneA, faceZoneA, ...) so they're independently configurable."""
     zones = []
     for letter in string.ascii_uppercase:
-        val = os.getenv(f'zone{letter}')
+        val = os.getenv(f'{prefix}{letter}')
         if not val:
             break
         try:
             pts = ast.literal_eval(val)
             pts_array = np.array(pts, dtype=np.float32)
             if len(pts_array) < 3:
-                logging.warning(f'zone{letter} has fewer than 3 points, skipping')
+                logging.warning(f'{prefix}{letter} has fewer than 3 points, skipping')
                 continue
-            zones.append({'name': f'zone{letter}', 'polygon': pts_array})
-            logging.info(f'Loaded zone{letter} with {len(pts_array)} vertices')
+            zones.append({'name': f'{prefix}{letter}', 'polygon': pts_array})
+            logging.info(f'Loaded {prefix}{letter} with {len(pts_array)} vertices')
         except Exception as e:
-            logging.error(f'Failed to parse zone{letter}: {e}')
+            logging.error(f'Failed to parse {prefix}{letter}: {e}')
     return zones
 
 
@@ -210,6 +213,18 @@ if DETECTION_MODE == 'zone':
         )
 else:
     ZONES = []
+
+# APD/Face restriction zones (independent of DETECTION_MODE): a detector only
+# fires for detections whose center falls inside one of its own zones, if any
+# are configured. Fallback when a detector has no zone of its own: reuse the
+# person-counting zones IF DETECTION_MODE is 'zone' (there's a "regular zone"
+# to inherit); in 'line_crossing' mode there is no regular zone to fall back
+# on, so the detector runs unrestricted across the whole crop/frame unless its
+# own apdZone*/faceZone* is explicitly set.
+APD_ZONES = load_zones_from_env(prefix='apdZone')
+FACE_ZONES = load_zones_from_env(prefix='faceZone')
+APD_EFFECTIVE_ZONES = APD_ZONES or (ZONES if DETECTION_MODE == 'zone' else [])
+FACE_EFFECTIVE_ZONES = FACE_ZONES or (ZONES if DETECTION_MODE == 'zone' else [])
 
 logging.info(f"DETECTION_MODE = {DETECTION_MODE}")
 logging.info(f"SWAP_IN_OUT = {SWAP_IN_OUT} ({'IN line first → count IN' if SWAP_IN_OUT else 'OUT line first → count IN'})")
