@@ -9,6 +9,7 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { StatusBadge } from '@/components/StatusBadge';
+import { ModelSelect } from '@/components/ModelSelect';
 import { TagSelect } from '@/components/TagSelect';
 import { LineDrawer } from '@/components/LineDrawer';
 import { ZoneDrawer, type DrawnZone } from '@/components/ZoneDrawer';
@@ -91,32 +92,6 @@ function drawnLinesToEnv(lines: DrawnLine[]): Record<string, string> {
     result[`line${line.label}`] = `[(${line.p1.x}, ${line.p1.y}), (${line.p2.x}, ${line.p2.y})]`;
   }
   return result;
-}
-
-/** Triton model picker with ready-state badge and free-text fallback when the
- *  repository index is unavailable — used by the primary, APD, and Fire/Smoke
- *  model fields so the readiness display can't drift between them. */
-function ModelSelect({ value, onChange, placeholder, models }: {
-  value: string;
-  onChange: (v: string) => void;
-  placeholder: string;
-  models: { name: string; state: string }[];
-}) {
-  if (models.length === 0) {
-    return <Input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} />;
-  }
-  return (
-    <Select value={value} onValueChange={v => v && onChange(v)}>
-      <SelectTrigger><SelectValue placeholder="Select a model" /></SelectTrigger>
-      <SelectContent>
-        {models.map(m => (
-          <SelectItem key={m.name} value={m.name}>
-            {m.name} {m.state === 'READY' ? '● ready' : m.state === 'OFFLINE' ? '○ triton offline' : `(${m.state.toLowerCase()})`}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
 }
 
 export default function DeviceDetailPage({ params }: { params: Promise<{ code: string }> }) {

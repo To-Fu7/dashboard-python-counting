@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { ModelSelect } from '@/components/ModelSelect';
 import { TagSelect } from '@/components/TagSelect';
 import { toast } from 'sonner';
 import type { GlobalSettings } from '@/lib/types';
@@ -14,6 +15,7 @@ export default function SettingsPage() {
   const [settings, setSettings] = useState<GlobalSettings>(DEFAULT_SETTINGS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [tritonModels, setTritonModels] = useState<{ name: string; state: string }[]>([]);
 
   useEffect(() => {
     fetch('/api/settings')
@@ -21,6 +23,10 @@ export default function SettingsPage() {
       .then(d => { if (d.settings) setSettings(d.settings); })
       .catch(() => toast.error('Failed to load settings'))
       .finally(() => setLoading(false));
+    fetch('/api/triton/models')
+      .then(r => r.json())
+      .then(d => { if (d.models) setTritonModels(d.models); })
+      .catch(() => { /* Triton model list unavailable — keep free-text fallback */ });
   }, []);
 
   function setPg(key: keyof GlobalSettings['pg'], value: string) {
@@ -113,20 +119,22 @@ export default function SettingsPage() {
             </p>
           </FormField>
           <FormField label="Default Model">
-            <Input
+            <ModelSelect
               value={settings.triton.defaultModel}
-              onChange={e => setTriton('defaultModel', e.target.value)}
+              onChange={v => setTriton('defaultModel', v)}
               placeholder="yolo26m_640"
+              models={tritonModels}
             />
             <p className="text-xs text-muted-foreground">
               Model repository name assigned to newly created cameras.
             </p>
           </FormField>
           <FormField label="Face Embedding Model (ArcFace)">
-            <Input
+            <ModelSelect
               value={settings.triton.faceEmbedModel}
-              onChange={e => setTriton('faceEmbedModel', e.target.value)}
+              onChange={v => setTriton('faceEmbedModel', v)}
               placeholder="arcface_112"
+              models={tritonModels}
             />
             <p className="text-xs text-muted-foreground">
               Used to embed photos on the Face Enrollment page — must match cameras&apos; FACE_EMBED_MODEL,
