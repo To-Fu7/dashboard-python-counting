@@ -8,15 +8,33 @@ import type { CropRect } from '@/lib/types';
 interface Point { x: number; y: number }
 export interface DrawnZone { label: string; points: Point[] }
 
+/** One independently-toggled set of zones sharing the same canvas/stream —
+ *  e.g. person-counting zones, APD restriction zone, Face restriction zone.
+ *  Only one layer is "active" (editable) at a time, but all layers' zones
+ *  are drawn simultaneously so their relative positions stay visible. */
+export interface ZoneLayer {
+  key: string;
+  label: string;
+  color: string;
+  zones: DrawnZone[];
+  onChange: (zones: DrawnZone[]) => void;
+}
+
 interface ZoneDrawerProps {
   deviceCode: string;
   resolution?: [number, number];
+  /** Single-layer usage (back-compat): a plain zones/onChange pair. */
   initialZones?: DrawnZone[];
-  onChange: (zones: DrawnZone[]) => void;
+  onChange?: (zones: DrawnZone[]) => void;
+  /** Multi-layer usage: several independently-toggled zone sets on one shared
+   *  stream/canvas instead of one ZoneDrawer per zone type. Takes precedence
+   *  over initialZones/onChange when provided. */
+  layers?: ZoneLayer[];
   cropRect?: CropRect | null;
   onCropChange?: (crop: CropRect | null) => void;
 }
 
+const DEFAULT_LAYER_KEY = '__default';
 const ZONE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 const SNAP_RADIUS = 20;
 const CROP_HANDLE = 8;
@@ -58,8 +76,9 @@ function insideCrop(pt: Point, r: CropRect): boolean {
 export function ZoneDrawer({
   deviceCode,
   resolution = [800, 600],
-  initialZones = [],
+  initialZones,
   onChange,
+  layers: layersProp,
   cropRect = null,
   onCropChange,
 }: ZoneDrawerProps) {
@@ -67,12 +86,18 @@ export function ZoneDrawer({
   const captureImgRef = useRef<HTMLImageElement | null>(null);
   const streamImgRef = useRef<HTMLImageElement | null>(null);
 
+  // Normalize single-layer (back-compat) usage into the same layers[] shape.
+  const layers: ZoneLayer[] = layersProp ?? [{
+    key: DEFAULT_LAYER_KEY, label: '', color: ZONE_COLORS[0],
+    zones: initialZones ?? [], onChange: onChange ?? (() => {}),
+  }];
+
   const [bgMode, setBgMode] = useState<'stream' | 'capture'>('stream');
   const [streamFailed, setStreamFailed] = useState(false);
   const [streamConnecting, setStreamConnecting] = useState(true);
   const [capturing, setCapturing] = useState(false);
   const [captureError, setCaptureError] = useState<string | null>(null);
-  const [zones, setZones] = useState<DrawnZone[]>(initialZones);
+  const [activeLayerKey, setActiveLayerKey] = useState(layers[0]?.key ?? DEFAULT_LAYER_KEY);
   const [pendingPoints, setPendingPoints] = useState<Point[]>([]);
   const [mousePos, setMousePos] = useState<Point | null>(null);
 
@@ -87,13 +112,20 @@ export function ZoneDrawer({
     startCrop: CropRect;
   } | null>(null);
 
+  // If the active layer disappears (e.g. its detector got disabled), fall
+  // back to the first remaining layer instead of pointing at nothing.
   useEffect(() => {
-    setZones(initialZones);
-  }, [initialZones.length]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!layers.some(l => l.key === activeLayerKey)) {
+      setActiveLayerKey(layers[0]?.key ?? DEFAULT_LAYER_KEY);
+      setPendingPoints([]);
+    }
+  }, [layers, activeLayerKey]);
 
   useEffect(() => {
     setLocalCrop(cropRect ?? null);
   }, [cropRect]);
+
+  const activeLayer = layers.find(l => l.key === activeLayerKey) ?? layers[0];
 
   function switchMode(mode: 'stream' | 'capture') {
     if (mode === 'stream') { setStreamFailed(false); setStreamConnecting(true); }
@@ -167,38 +199,43 @@ export function ZoneDrawer({
       ctx.restore();
     }
 
-    // Completed zones
-    zones.forEach((zone, i) => {
-      if (zone.points.length < 2) return;
-      const color = ZONE_COLORS[i % ZONE_COLORS.length];
+    // Completed zones — every layer drawn at once, each in its own color,
+    // so relative position across zone types stays visible while editing one.
+    layers.forEach(layer => {
+      layer.zones.forEach((zone, i) => {
+        if (zone.points.length < 2) return;
+        const isActive = layer.key === activeLayerKey;
 
-      ctx.save();
-      ctx.beginPath();
-      ctx.moveTo(zone.points[0].x, zone.points[0].y);
-      zone.points.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
-      ctx.closePath();
-      ctx.fillStyle = `${color}40`;
-      ctx.fill();
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 2;
-      ctx.stroke();
-
-      const c = zoneCentroid(zone.points);
-      ctx.fillStyle = color;
-      ctx.font = 'bold 13px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(`Zone ${i + 1}`, c.x, c.y);
-
-      zone.points.forEach(p => {
+        ctx.save();
         ctx.beginPath();
-        ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
-        ctx.fillStyle = color;
+        ctx.moveTo(zone.points[0].x, zone.points[0].y);
+        zone.points.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
+        ctx.closePath();
+        ctx.fillStyle = `${layer.color}${isActive ? '40' : '20'}`;
         ctx.fill();
+        ctx.strokeStyle = layer.color;
+        ctx.lineWidth = isActive ? 2 : 1.5;
+        ctx.setLineDash(isActive ? [] : [4, 3]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        const c = zoneCentroid(zone.points);
+        ctx.fillStyle = layer.color;
+        ctx.font = 'bold 12px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(layer.label ? `${layer.label} ${i + 1}` : `Zone ${i + 1}`, c.x, c.y);
+
+        zone.points.forEach(p => {
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, isActive ? 4 : 3, 0, Math.PI * 2);
+          ctx.fillStyle = layer.color;
+          ctx.fill();
+        });
+        ctx.restore();
       });
-      ctx.restore();
     });
 
-    // In-progress polygon
+    // In-progress polygon (active layer only)
     if (pendingPoints.length > 0) {
       const first = pendingPoints[0];
 
@@ -263,7 +300,7 @@ export function ZoneDrawer({
         ctx.fillText('Click near first point to close zone', first.x + 10, first.y - 8);
       }
     }
-  }, [zones, pendingPoints, mousePos, bgMode, localCrop, cropMode]);
+  }, [layers, activeLayerKey, pendingPoints, mousePos, bgMode, localCrop, cropMode]);
 
   useEffect(() => { drawCanvas(); }, [drawCanvas]);
 
@@ -362,22 +399,22 @@ export function ZoneDrawer({
     setMousePos(getCanvasPoint(e));
   }
 
-  // ── Zone click handler ──────────────────────────────────────────────────────
+  // ── Zone click handler (operates on the active layer only) ─────────────────
 
   function handleCanvasClick(e: React.MouseEvent<HTMLCanvasElement>) {
     if (cropMode) return;
     if (bgMode === 'capture' && !captureImgRef.current) return;
+    if (!activeLayer) return;
     const pt = getCanvasPoint(e);
 
     if (pendingPoints.length >= 3 && dist(pt, pendingPoints[0]) <= SNAP_RADIUS) {
       const newZone: DrawnZone = {
-        label: getZoneLetter(zones.length),
+        label: getZoneLetter(activeLayer.zones.length),
         points: [...pendingPoints],
       };
-      const updated = [...zones, newZone];
-      setZones(updated);
+      const updated = [...activeLayer.zones, newZone];
       setPendingPoints([]);
-      onChange(updated);
+      activeLayer.onChange(updated);
     } else {
       setPendingPoints(prev => [...prev, pt]);
     }
@@ -388,24 +425,43 @@ export function ZoneDrawer({
       setPendingPoints(prev => prev.slice(0, -1));
       return;
     }
-    if (zones.length > 0) {
-      const updated = zones.slice(0, -1);
-      setZones(updated);
-      onChange(updated);
+    if (activeLayer && activeLayer.zones.length > 0) {
+      activeLayer.onChange(activeLayer.zones.slice(0, -1));
     }
   }
 
   function clearAll() {
-    setZones([]);
     setPendingPoints([]);
-    onChange([]);
+    activeLayer?.onChange([]);
   }
 
-  const canUndo = pendingPoints.length > 0 || zones.length > 0;
+  const canUndo = pendingPoints.length > 0 || (activeLayer?.zones.length ?? 0) > 0;
   const cursorStyle = cropMode ? (cropDragging ? 'grabbing' : 'crosshair') : 'crosshair';
+  const totalZoneCount = layers.reduce((sum, l) => sum + l.zones.length, 0);
 
   return (
     <div className="space-y-3">
+      {layers.length > 1 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-muted-foreground mr-1">Editing:</span>
+          {layers.map(layer => (
+            <button
+              key={layer.key}
+              type="button"
+              onClick={() => { setActiveLayerKey(layer.key); setPendingPoints([]); }}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-colors ${
+                layer.key === activeLayerKey
+                  ? 'text-white border-transparent'
+                  : 'text-muted-foreground border-border hover:bg-accent'
+              }`}
+              style={layer.key === activeLayerKey ? { backgroundColor: layer.color } : undefined}
+            >
+              {layer.label} ({layer.zones.length})
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="flex items-center gap-2 flex-wrap">
         <div className="flex rounded-md overflow-hidden border border-border text-xs">
           <button
@@ -460,9 +516,9 @@ export function ZoneDrawer({
           <Undo2 className="w-4 h-4 mr-2" />
           Undo
         </Button>
-        <Button variant="outline" size="sm" onClick={clearAll} disabled={zones.length === 0 && pendingPoints.length === 0}>
+        <Button variant="outline" size="sm" onClick={clearAll} disabled={(activeLayer?.zones.length ?? 0) === 0 && pendingPoints.length === 0}>
           <Trash2 className="w-4 h-4 mr-2" />
-          Clear All
+          Clear {layers.length > 1 ? activeLayer?.label : 'All'}
         </Button>
       </div>
 
@@ -519,19 +575,31 @@ export function ZoneDrawer({
 
       <div className="text-xs text-muted-foreground space-y-0.5">
         <p>Click to place polygon vertices. Click near the first point (red circle) to close the zone.</p>
-        <p>Multiple zones can be drawn — each zone fires an event when a person enters.</p>
+        <p>
+          {layers.length > 1
+            ? `Drawing into "${activeLayer?.label}" — switch tabs above to edit a different zone type.`
+            : 'Multiple zones can be drawn — each zone fires an event when a person enters.'}
+        </p>
       </div>
 
-      {zones.length > 0 && (
-        <div className="bg-muted/40 rounded p-3 space-y-1">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Defined Zones</p>
-          {zones.map((zone, i) => (
-            <div key={i} className="flex items-center gap-2 text-xs font-mono">
-              <span className="text-muted-foreground w-16">zone{zone.label}:</span>
-              <span>{zone.points.length} vertices</span>
-              <span className="text-muted-foreground">
-                [{zone.points.map(p => `(${p.x},${p.y})`).join(', ')}]
-              </span>
+      {totalZoneCount > 0 && (
+        <div className="bg-muted/40 rounded p-3 space-y-2">
+          {layers.filter(l => l.zones.length > 0).map(layer => (
+            <div key={layer.key} className="space-y-1">
+              {layers.length > 1 && (
+                <p className="text-xs font-medium uppercase tracking-wide" style={{ color: layer.color }}>
+                  {layer.label}
+                </p>
+              )}
+              {layer.zones.map((zone, i) => (
+                <div key={i} className="flex items-center gap-2 text-xs font-mono">
+                  <span className="text-muted-foreground w-16">zone{zone.label}:</span>
+                  <span>{zone.points.length} vertices</span>
+                  <span className="text-muted-foreground">
+                    [{zone.points.map(p => `(${p.x},${p.y})`).join(', ')}]
+                  </span>
+                </div>
+              ))}
             </div>
           ))}
         </div>

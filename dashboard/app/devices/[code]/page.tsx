@@ -12,7 +12,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { ModelSelect } from '@/components/ModelSelect';
 import { TagSelect } from '@/components/TagSelect';
 import { LineDrawer } from '@/components/LineDrawer';
-import { ZoneDrawer, type DrawnZone } from '@/components/ZoneDrawer';
+import { ZoneDrawer, type DrawnZone, type ZoneLayer } from '@/components/ZoneDrawer';
 import type { CropRect } from '@/lib/types';
 import { Play, Square, RotateCcw, ArrowLeft, Loader2, ArrowDownToLine, ArrowUpFromLine } from 'lucide-react';
 import Link from 'next/link';
@@ -617,56 +617,39 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
                 />
               </Section>
             </>
-          ) : (
-            <Section title="Zone Drawing">
-              <ZoneDrawer
-                deviceCode={code}
-                resolution={parseResolution(env.SCREEN_RESOLUTION)}
-                initialZones={zones}
-                onChange={setZones}
-                cropRect={cropRect}
-                onCropChange={setCropRect}
-              />
-            </Section>
-          )}
+          ) : null}
 
-          {env.APD_ENABLED === 'true' && (
-            <Section title="APD Restriction Zone (optional)">
-              <p className="text-xs text-muted-foreground -mt-2 mb-1">
-                Restrict APD violations to specific area(s) of the frame — e.g. only inside a
-                construction zone, ignoring the sidewalk. Leave empty to use{' '}
-                {(env.DETECTION_MODE || 'line_crossing') === 'zone'
-                  ? 'the person-counting zone(s) drawn above'
-                  : 'no restriction (the whole crop area)'}.
-              </p>
-              <ZoneDrawer
-                deviceCode={code}
-                resolution={parseResolution(env.SCREEN_RESOLUTION)}
-                initialZones={apdZones}
-                onChange={setApdZones}
-                cropRect={cropRect}
-              />
-            </Section>
-          )}
+          {(() => {
+            const zoneMode = (env.DETECTION_MODE || 'line_crossing') === 'zone';
+            const zoneLayers: ZoneLayer[] = [
+              ...(zoneMode ? [{ key: 'person', label: 'Person Zone', color: '#3b82f6', zones, onChange: setZones }] : []),
+              ...(env.APD_ENABLED === 'true'
+                ? [{ key: 'apd', label: 'APD Zone', color: '#f59e0b', zones: apdZones, onChange: setApdZones }]
+                : []),
+              ...(env.FACE_ENABLED === 'true'
+                ? [{ key: 'face', label: 'Face Zone', color: '#10b981', zones: faceZones, onChange: setFaceZones }]
+                : []),
+            ];
+            if (zoneLayers.length === 0) return null;
 
-          {env.FACE_ENABLED === 'true' && (
-            <Section title="Face Restriction Zone (optional)">
-              <p className="text-xs text-muted-foreground -mt-2 mb-1">
-                Restrict face recognition to specific area(s) of the frame — e.g. only at an
-                entrance gate. Leave empty to use{' '}
-                {(env.DETECTION_MODE || 'line_crossing') === 'zone'
-                  ? 'the person-counting zone(s) drawn above'
-                  : 'no restriction (the whole crop area)'}.
-              </p>
-              <ZoneDrawer
-                deviceCode={code}
-                resolution={parseResolution(env.SCREEN_RESOLUTION)}
-                initialZones={faceZones}
-                onChange={setFaceZones}
-                cropRect={cropRect}
-              />
-            </Section>
-          )}
+            return (
+              <Section title="Zone Drawing">
+                {!zoneMode && (env.APD_ENABLED === 'true' || env.FACE_ENABLED === 'true') && (
+                  <p className="text-xs text-muted-foreground -mt-2 mb-1">
+                    APD/Face zones are optional restrictions, independent of Detection Mode (currently
+                    Line Crossing) — leave empty for no restriction (whole crop area).
+                  </p>
+                )}
+                <ZoneDrawer
+                  deviceCode={code}
+                  resolution={parseResolution(env.SCREEN_RESOLUTION)}
+                  layers={zoneLayers}
+                  cropRect={cropRect}
+                  onCropChange={zoneMode ? setCropRect : undefined}
+                />
+              </Section>
+            );
+          })()}
 
           <div className="flex justify-end">
             <Button onClick={handleSave} disabled={saving}>
