@@ -126,7 +126,7 @@ PG_HOST=<host> PG_PORT=5435 PG_DB=postgres PG_USER=postgres PG_PASS=<pass> pytho
 | `apd_hourly` | Agregat pelanggaran APD per jam | `device_id + hour_start UNIQUE`, `data JSONB` mis. `{"NO-Hardhat": 10, "unique_persons": 8}` |
 | `firesmoke_hourly` | Agregat fire/smoke per jam | sama, `data` mis. `{"fire": 3, "smoke": 7}` |
 | `face_hourly` | Agregat face per jam | sama, `data` mis. `{"Budi": 4, "intruder": 2, "unique_persons": 6}` |
-| `known_faces` | Roster wajah ter-enroll | `person_name`, `embedding REAL[]` (512 float), `variant_type` (`original/skew/contrast/flip`) — satu orang = banyak row (satu per varian augmentasi) |
+| `known_faces` | Roster wajah ter-enroll | `person_name`, `embedding REAL[]` (512 float), `variant_type` (`original`, `flip`, `rotate_±12`, `crop`, `lowres`, `brightness_*`, `contrast_*`, `desaturated`, `gamma`, `blur`, `jpeg_artifact`, `occlusion_*`) — satu orang = banyak row (satu per varian augmentasi) |
 
 ### Pola hourly aggregate (Part A)
 
@@ -296,10 +296,27 @@ Dedup di-reset bersama tracker saat Triton reconnect.
 
 **Enrollment (dashboard → Face Enrollment):**
 
-Upload satu foto + nama → server otomatis membuat varian augmentasi
-(original, flip, contrast naik/turun, skew), meng-embed tiap varian via
-Triton, dan menyimpan satu row `known_faces` per varian. Matching runtime
+Upload satu foto wajah (idealnya sudah ter-crop rapat) + nama → server
+otomatis membuat ~16 varian augmentasi lalu meng-embed tiap varian via Triton,
+satu row `known_faces` per varian:
+
+- **Geometric**: flip horizontal, rotasi kecil ±12° (lebih besar merusak
+  struktur wajah), center crop 85%, low-res round-trip (simulasi wajah kecil)
+- **Photometric**: brightness naik/turun, contrast naik/turun, desaturasi,
+  gamma — penting untuk variasi lighting siang/malam CCTV
+- **Noise/blur**: gaussian blur (pengganti motion blur), JPEG quality 25
+  (simulasi artefak kompresi stream RTSP)
+- **Occlusion**: patch hitam di bawah wajah (mirip masker) dan di area mata
+  (mirip topi/kacamata)
+
+Yang sengaja TIDAK dipakai: 3DMM pose synthesis (butuh pipeline 3D terpisah)
+dan Mixup/CutMix (merusak identitas untuk face recognition). Matching runtime
 mengambil similarity TERBAIK across semua varian seseorang (bukan rata-rata).
+
+Di sisi kamera, sebelum embedding wajah di-"zoom" dulu (`crop_face`): bbox
+diperluas margin 25% (ArcFace butuh konteks sekitar wajah) dan crop kecil
+di-upscale bicubic minimal 112px — wajah CCTV yang jauh/kecil match jauh
+lebih baik daripada crop mentah.
 Hapus orang = semua row-nya dihapus → dia jadi "intruder" lagi. Kamera
 menyerap perubahan roster maksimal `FACE_CACHE_REFRESH_MINUTES` (default 10)
 kemudian.

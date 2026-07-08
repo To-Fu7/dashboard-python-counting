@@ -31,6 +31,7 @@ from detection import apd, face, firesmoke
 from inference import TritonEmbedClient, TritonUnavailableError, TritonYoloClient
 from inference.model_metadata import load_model_classes
 from outputs import bbox_writer, db_worker, face_db, mjpeg_server, mqtt_out
+from outputs.image_utils import crop_face
 from tracking import BYTETracker, BYTETrackerArgs, Detections
 
 TRITON_BACKOFF_MIN_S = 1.0
@@ -563,7 +564,9 @@ def main():
                     fx2 += cfg.CROP_X1
                     fy2 += cfg.CROP_Y1
                     try:
-                        face_crop = original_frame[max(0, fy1):fy2, max(0, fx1):fx2]
+                        # "Zoom" first: margin-expanded, upscaled crop — small
+                        # CCTV faces embedded raw match poorly (see crop_face).
+                        face_crop = crop_face(original_frame, (fx1, fy1, fx2, fy2))
                         if face_crop.size == 0:
                             continue
                         embedding = face_embed_client.infer(face_crop)

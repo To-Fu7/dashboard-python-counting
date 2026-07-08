@@ -46,3 +46,35 @@ def crop_image(frame, box, padding=None):
         person_crop = cv2.resize(person_crop, (new_w, new_h), interpolation=cv2.INTER_LANCZOS4)
 
     return person_crop
+
+
+def crop_face(frame, box, margin=0.25, min_size=112):
+    """'Zoom' a detected face before embedding: expand the bbox by a
+    proportional margin (ArcFace expects some context around the face, and
+    tracker boxes are often tighter than the training crop), then upscale
+    tiny CCTV faces so the embedder's downstream 112x112 resize starts from
+    a cleanly interpolated image instead of a handful of raw pixels.
+
+    box: (x1, y1, x2, y2) in the frame's own coordinate system.
+    Returns an empty array if the box is degenerate."""
+    x1, y1, x2, y2 = box
+    h, w = frame.shape[:2]
+
+    mx = int((x2 - x1) * margin)
+    my = int((y2 - y1) * margin)
+    x1_crop = max(0, x1 - mx)
+    y1_crop = max(0, y1 - my)
+    x2_crop = min(w, x2 + mx)
+    y2_crop = min(h, y2 + my)
+
+    face = frame[y1_crop:y2_crop, x1_crop:x2_crop]
+    crop_h, crop_w = face.shape[:2]
+    if crop_h == 0 or crop_w == 0:
+        return face
+
+    shortest = min(crop_h, crop_w)
+    if shortest < min_size:
+        scale = min_size / shortest
+        face = cv2.resize(face, (round(crop_w * scale), round(crop_h * scale)),
+                          interpolation=cv2.INTER_CUBIC)
+    return face

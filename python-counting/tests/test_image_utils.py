@@ -72,9 +72,34 @@ def test_degenerate_box_does_not_crash():
     check("returns an array", out is not None and hasattr(out, "shape"))
 
 
+def test_crop_face_zoom():
+    print("[5] crop_face: margin expansion + tiny-face upscale")
+    from outputs.image_utils import crop_face
+    frame = _fake_frame()
+
+    # Tiny distant CCTV face: 30x30 → margin makes 45x45 → upscaled to >= 112 shortest side
+    out = crop_face(frame, (400, 300, 430, 330), margin=0.25, min_size=112)
+    check("tiny face upscaled to min_size on shortest side", min(out.shape[:2]) >= 112,
+          f"shape={out.shape}")
+
+    # Large face: 200x200 → margin 25% each side = 300x300, NOT resized
+    out = crop_face(frame, (100, 100, 300, 300), margin=0.25, min_size=112)
+    check("large face gets margin but no resize", out.shape[:2] == (300, 300), f"shape={out.shape}")
+
+    # Margin clamped at frame edges
+    out = crop_face(frame, (0, 0, 200, 200), margin=0.25, min_size=112)
+    check("margin clamps at frame edge (no negative index)", out.shape[:2] == (250, 250),
+          f"shape={out.shape}")
+
+    # Degenerate box returns empty without raising
+    out = crop_face(frame, (100, 100, 100, 100))
+    check("degenerate box returns empty array without raising", out.size == 0)
+
+
 if __name__ == '__main__':
     test_upscale_small_box()
     test_no_upscale_large_box()
     test_clamp_at_frame_edge()
     test_degenerate_box_does_not_crash()
+    test_crop_face_zoom()
     finish()
