@@ -281,8 +281,10 @@ Dedup di-reset bersama tracker saat Triton reconnect.
    mv w600k_r50.onnx models/arcface_112/1/model.onnx
    cat > models/arcface_112/config.pbtxt <<'EOF'
    platform: "onnxruntime_onnx"
-   max_batch_size: 8
+   max_batch_size: 0
    EOF
+   # max_batch_size WAJIB 0: w600k_r50.onnx punya dimensi batch fixed [1,3,112,112],
+   # nilai >0 membuat Triton gagal load ("model does not support batching").
    # (input/output tensor di-autocomplete onnxruntime; client discover via metadata)
    ```
 3. Build engine + restart Triton (perintah sama seperti di atas).
