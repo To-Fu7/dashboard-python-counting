@@ -407,7 +407,9 @@ python tests/test_image_utils.py       # crop util
 python tests/test_detection_events.py  # dedup APD, cooldown fire/smoke, routing topic MQTT
 python tests/test_hourly_aggregate.py  # SQL shape increment/pregenerate
 python tests/test_face_detection.py    # dedup face + cosine matching
+python tests/test_zone_restriction.py  # resolusi APD/Face restriction zone
 python tests/test_e2e_smoke.py         # loop main.py penuh di 1.mp4 (150 frame, tanpa Triton)
+python tests/test_firesmoke_e2e_smoke.py  # sama, tapi FIRE_SMOKE_ENABLED=true (lihat §8.1)
 
 # dashboard
 cd dashboard && npx tsc --noEmit && npm run dev
@@ -415,6 +417,26 @@ cd dashboard && npx tsc --noEmit && npm run dev
 
 `DEBUG_MODE=true` membuat semua operasi DB/MQTT jadi no-op (log saja) — aman
 untuk dev tanpa infra.
+
+### 8.1 Smoke test Fire/Smoke tanpa model asli (`FALLBACK_VIDEO`)
+
+`FALLBACK_VIDEO` (env, sudah ada sejak awal) mengarahkan `main.py` membaca
+dari file video lokal alih-alih RTSP — bisa diarahkan ke video apa saja, tidak
+harus `1.mp4`:
+
+```bash
+FALLBACK_VIDEO=video_lo_sendiri.mp4 DEBUG_MODE=true FIRE_SMOKE_ENABLED=true python main.py
+```
+
+`tests/test_firesmoke_e2e_smoke.py` memakai mekanisme yang sama untuk smoke
+test otomatis: menjalankan loop `main.py` asli di `1.mp4` (bisa diganti via
+env `FALLBACK_VIDEO` sebelum run) dengan stub YOLO lokal (tanpa Triton), dan
+me-relabel deteksi "person" jadi "fire" (karena belum ada bobot fire/smoke
+asli yang di-commit ke repo test) — jadi yang diverifikasi adalah **wiring
+pipeline-nya** (decode video → sampling inferensi → cooldown gate → increment
+hourly + MQTT beneran terpicu), bukan akurasi model. Berguna untuk memastikan
+kode fire/smoke tidak crash dan event benar-benar sampai ke ujung pipeline
+sebelum model asli tersedia/di-deploy.
 
 ---
 
