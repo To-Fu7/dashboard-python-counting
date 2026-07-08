@@ -521,6 +521,13 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
                     <FormField label="Cache Refresh (minutes)">
                       <Input type="number" min="1" value={env.FACE_CACHE_REFRESH_MINUTES || '10'} onChange={e => setField('FACE_CACHE_REFRESH_MINUTES', e.target.value)} />
                     </FormField>
+                    <FormField label="Best-Shot Capture Frames">
+                      <Input type="number" min="1" value={env.FACE_CAPTURE_FRAMES || '5'} onChange={e => setField('FACE_CAPTURE_FRAMES', e.target.value)} />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Sightings buffered per track before embedding the sharpest/best-lit/most
+                        confident one — higher = better selection but longer verdict delay.
+                      </p>
+                    </FormField>
                   </div>
                 )}
               </div>

@@ -114,6 +114,7 @@ export async function POST(request: Request) {
       INSIDER_TAG: settings.defaults.insider_tag,
       INTRUDER_TAG: settings.defaults.intruder_tag,
       FACE_CACHE_REFRESH_MINUTES: settings.defaults.face_cache_refresh_minutes,
+      FACE_CAPTURE_FRAMES: settings.defaults.face_capture_frames,
       POINT_AXIS: 'Y',
       MERGE_GATES: 'false',
       SWAP_IN_OUT: 'false',

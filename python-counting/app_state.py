@@ -49,3 +49,8 @@ firesmoke_last_alert = {}
 # for the life of that track — one verdict per track, ever (persists until
 # tracker reset, same as apd_alerted_tracks).
 face_alerted_tracks = set()
+
+# Best-shot buffering: track_id -> list of (quality_score, crop, box) sightings
+# collected so far, up to cfg.FACE_CAPTURE_FRAMES, before committing to the
+# highest-quality one for embedding/matching (see detection.face.collect_best_shot).
+face_candidates = defaultdict(list)

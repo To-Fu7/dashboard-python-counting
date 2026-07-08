@@ -227,11 +227,13 @@ def _center_in_any_zone(cx, cy, zones):
 
 
 def reset_face_state(face_tracker):
-    """Tracker reset and dedup-state clear must always happen together — a
-    reset tracker reuses track ids, so a stale entry would suppress a fresh
-    verdict for what is actually a new, unclassified person."""
+    """Tracker reset and dedup/best-shot state clear must always happen
+    together — a reset tracker reuses track ids, so stale entries would
+    either suppress a fresh verdict or mix best-shot candidates from an
+    unrelated earlier person into a recycled id's selection."""
     face_tracker.reset()
     state.face_alerted_tracks.clear()
+    state.face_candidates.clear()
 
 
 def reset_tracking_state(tracker, apd_tracker=None, face_tracker=None):
@@ -568,25 +570,42 @@ def main():
                                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
                         firesmoke.process_detection(label, conf, frame)
 
-                # Process Face detections (per-track dedup; crop -> embed -> match -> verdict)
+                # Process Face detections: buffer a few sightings per track and embed
+                # only the highest-quality one (best-shot), not whichever frame the
+                # track first appeared in — see detection.face module docstring.
                 for trk in face_tracks:
                     track_id = int(trk[4])
                     if track_id in state.face_alerted_tracks:
-                        continue  # skip embedding/matching work for already-verdicted tracks
+                        continue  # skip scoring/embedding work for already-verdicted tracks
                     fx1, fy1, fx2, fy2 = (int(v) for v in trk[:4])
                     fx1 += cfg.CROP_X1
                     fy1 += cfg.CROP_Y1
                     fx2 += cfg.CROP_X1
                     fy2 += cfg.CROP_Y1
                     if not _center_in_any_zone((fx1 + fx2) // 2, (fy1 + fy2) // 2, cfg.FACE_EFFECTIVE_ZONES):
-                        continue  # outside the Face restriction zone — skip the (costly) embed call
+                        continue  # outside the Face restriction zone
+
+                    # "Zoom" first: margin-expanded, upscaled crop — small
+                    # CCTV faces embedded raw match poorly (see crop_face).
+                    face_crop = crop_face(original_frame, (fx1, fy1, fx2, fy2))
+                    if face_crop.size == 0:
+                        continue
+
+                    conf = float(trk[5])
+                    quality = face.compute_quality_score(face_crop, fx2 - fx1, fy2 - fy1, conf)
+                    best = face.collect_best_shot(
+                        state.face_candidates[track_id], quality, face_crop, (fx1, fy1, fx2, fy2),
+                        cfg.FACE_CAPTURE_FRAMES,
+                    )
+                    if best is None:
+                        if draw_now:  # still gathering — neutral "scanning" box, no verdict yet
+                            cv2.rectangle(frame, (fx1, fy1), (fx2, fy2), (180, 180, 180), 1)
+                        continue
+                    state.face_candidates.pop(track_id, None)
+                    _, best_crop, _ = best
+
                     try:
-                        # "Zoom" first: margin-expanded, upscaled crop — small
-                        # CCTV faces embedded raw match poorly (see crop_face).
-                        face_crop = crop_face(original_frame, (fx1, fy1, fx2, fy2))
-                        if face_crop.size == 0:
-                            continue
-                        embedding = face_embed_client.infer(face_crop)
+                        embedding = face_embed_client.infer(best_crop)
                         name, similarity = face_db.match(embedding)
                         label = name if name else 'intruder'
                         tag = cfg.INSIDER_TAG if name else cfg.INTRUDER_TAG
@@ -598,13 +617,16 @@ def main():
                         cv2.rectangle(frame, (fx1, fy1), (fx2, fy2), color, 2)
                         cv2.putText(frame, label, (fx1, max(0, fy1 - 6)),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-                    face.process_detection(track_id, label, tag, similarity, (fx1, fy1, fx2, fy2), original_frame)
+                    face.process_detection(track_id, label, tag, similarity, best_crop)
 
-                # Bound face_alerted_tracks: ByteTrack ids are monotonic within a run,
-                # so the smallest keys always belong to long-dead tracks.
+                # Bound face_alerted_tracks/face_candidates: ByteTrack ids are monotonic
+                # within a run, so the smallest keys always belong to long-dead tracks.
                 if len(state.face_alerted_tracks) > FACE_ALERTED_TRACKS_MAX:
                     for stale_id in sorted(state.face_alerted_tracks)[:FACE_ALERTED_TRACKS_MAX // 2]:
                         state.face_alerted_tracks.discard(stale_id)
+                if len(state.face_candidates) > FACE_ALERTED_TRACKS_MAX:
+                    for stale_id in sorted(state.face_candidates)[:FACE_ALERTED_TRACKS_MAX // 2]:
+                        del state.face_candidates[stale_id]
 
                 # bbox overlay file for the dashboard
                 bbox_writer.write_bbox_file()

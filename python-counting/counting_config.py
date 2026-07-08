@@ -292,6 +292,10 @@ FACE_EMBED_MODEL = os.getenv('FACE_EMBED_MODEL', '')  # ArcFace embedder, Triton
 FACE_CONFIDENCE = float(os.getenv('FACE_CONFIDENCE', 0.5))
 FACE_MATCH_THRESHOLD = float(os.getenv('FACE_MATCH_THRESHOLD', 0.5))  # min cosine similarity to call it a match
 FACE_CACHE_REFRESH_MINUTES = float(os.getenv('FACE_CACHE_REFRESH_MINUTES', 10))
+# Best-shot: sightings to buffer per track before embedding the highest-quality
+# one (size/sharpness/confidence), instead of embedding whatever frame the
+# track first appeared in. Higher = better selection but longer verdict delay.
+FACE_CAPTURE_FRAMES = int(os.getenv('FACE_CAPTURE_FRAMES', 5))
 INSIDER_TAG = os.getenv('INSIDER_TAG', 'info')
 INTRUDER_TAG = os.getenv('INTRUDER_TAG', 'alarm')
 if FACE_ENABLED and not (FACE_MODEL and FACE_EMBED_MODEL):

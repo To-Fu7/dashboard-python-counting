@@ -274,6 +274,9 @@ export default function SettingsPage() {
           <FormField label="Face Cache Refresh (minutes)">
             <Input type="number" min="1" value={settings.defaults.face_cache_refresh_minutes} onChange={e => setDefault('face_cache_refresh_minutes', e.target.value)} />
           </FormField>
+          <FormField label="Face Best-Shot Capture Frames">
+            <Input type="number" min="1" value={settings.defaults.face_capture_frames} onChange={e => setDefault('face_capture_frames', e.target.value)} />
+          </FormField>
         </div>
       </Section>
 

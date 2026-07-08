@@ -41,6 +41,7 @@ export interface DeviceEnvConfig {
   FACE_CONFIDENCE?: string;
   FACE_MATCH_THRESHOLD?: string;   // min cosine similarity to call it a match
   FACE_CACHE_REFRESH_MINUTES?: string;
+  FACE_CAPTURE_FRAMES?: string;    // best-shot: sightings buffered per track before embedding the best one
   INSIDER_TAG?: string;            // 'info' | 'alarm'
   INTRUDER_TAG?: string;           // 'info' | 'alarm'
   MQTT_APD_TOPIC?: string;
@@ -147,6 +148,7 @@ export interface GlobalSettings {
     insider_tag: string;
     intruder_tag: string;
     face_cache_refresh_minutes: string;
+    face_capture_frames: string;
   };
 }
 
@@ -193,5 +195,6 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
     insider_tag: 'info',
     intruder_tag: 'alarm',
     face_cache_refresh_minutes: '10',
+    face_capture_frames: '5',
   },
 };

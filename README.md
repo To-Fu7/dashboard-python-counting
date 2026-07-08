@@ -321,13 +321,52 @@ Hapus orang = semua row-nya dihapus → dia jadi "intruder" lagi. Kamera
 menyerap perubahan roster maksimal `FACE_CACHE_REFRESH_MINUTES` (default 10)
 kemudian.
 
+**Best-shot selection**: a track's verdict isn't committed from whichever
+frame it first appears in — on an oblique/overhead CCTV angle that first
+sighting is often a bad one (looking down, turned away, motion blur). Instead,
+up to `FACE_CAPTURE_FRAMES` (default 5) sightings are buffered per track, each
+scored by face size, sharpness (Laplacian variance — a focus/motion-blur
+proxy), detector confidence, and a mild penalty for too-dark/blown-out
+lighting; only the highest-scoring one gets embedded and matched. Same
+principle commercial face-capture cameras use (Hikvision's "best shot"
+patents describe scoring sightings by face size/sharpness/pose/illumination
+and committing to the best one, not the first) — minus pose scoring, since
+our detector doesn't emit facial landmarks. Higher `FACE_CAPTURE_FRAMES`
+means better selection at the cost of a longer delay before the verdict (and
+its MQTT alert) fires.
+
 **Env**: `FACE_ENABLED`, `FACE_MODEL`, `FACE_EMBED_MODEL`, `FACE_CONFIDENCE`
 (default 0.5), `FACE_MATCH_THRESHOLD` (default 0.5), `FACE_CACHE_REFRESH_MINUTES`
-(default 10), `INSIDER_TAG` (info), `INTRUDER_TAG` (alarm).
+(default 10), `FACE_CAPTURE_FRAMES` (default 5), `INSIDER_TAG` (info),
+`INTRUDER_TAG` (alarm).
 
 > `python-counting/face-comparison.py` (FastAPI + facenet-pytorch) adalah
 > implementasi referensi lama — TIDAK dipakai pipeline baru, dibiarkan sebagai
 > arsip.
+
+**Tuning untuk sudut kamera yang sulit** (CCTV overhead/oblique, wajah kecil
+& menunduk): tiga lever yang bisa dicoba, dari yang termurah:
+
+1. **`CROP_AREA` lebih sempit** ke area yang relevan saja (mis. meja kerja) —
+   gratis, tanpa re-export model. Model face selalu di-letterbox ke ukuran
+   `imgsz` tetap (mis. 640×640) apa pun resolusi sumbernya; crop yang lebih
+   sempit berarti budget piksel yang sama menutupi area fisik lebih kecil →
+   kepadatan piksel wajah naik.
+2. **Re-export model dengan `imgsz` lebih besar** (mis. `face_1280` alih-alih
+   `face_640`) — `tools/build_engine.sh` membaca `imgsz` dari `metadata.json`
+   tiap model secara otomatis (bukan hardcode 640), jadi tinggal export
+   dengan `--imgsz 1280` lalu jalankan model-builder seperti biasa.
+3. **Model lebih besar** (`yolov8m-face`/`yolov8l-face`, bukan `yolov8n-face`)
+   — recall wajah kecil/miring biasanya naik jauh lebih banyak daripada
+   sekadar naikkan imgsz, dengan cost VRAM/latency yang masih wajar di GPU
+   kelas RTX A2000 ke atas.
+
+**Penting**: dengan `docker-compose.yml` default (tanpa
+`--model-control-mode=explicit`), **semua model di folder `models/` di-load
+ke VRAM sekaligus saat Triton start** — bukan on-demand. Kalau menambah
+varian resolusi/ukuran model baru, **hapus yang lama** dari `models/`
+(`rm -rf models/face_640`) alih-alih membiarkan keduanya menumpuk, supaya
+VRAM tidak dobel untuk model yang sebenarnya cuma satu yang dipakai.
 
 ### 5.5 APD / Face Restriction Zone
 
@@ -406,7 +445,7 @@ python tests/test_parity.py            # letterbox/NMS/ByteTrack vs ultralytics 
 python tests/test_image_utils.py       # crop util
 python tests/test_detection_events.py  # dedup APD, cooldown fire/smoke, routing topic MQTT
 python tests/test_hourly_aggregate.py  # SQL shape increment/pregenerate
-python tests/test_face_detection.py    # dedup face + cosine matching
+python tests/test_face_detection.py    # dedup, best-shot selection, cosine matching
 python tests/test_zone_restriction.py  # resolusi APD/Face restriction zone
 python tests/test_e2e_smoke.py         # loop main.py penuh di 1.mp4 (150 frame, tanpa Triton)
 python tests/test_firesmoke_e2e_smoke.py  # sama, tapi FIRE_SMOKE_ENABLED=true (lihat §8.1)

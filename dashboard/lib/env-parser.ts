@@ -126,6 +126,7 @@ export function writeDeviceEnv(deviceCode: string, config: Partial<DeviceEnvConf
     `FACE_CONFIDENCE=${config.FACE_CONFIDENCE ?? '0.5'}`,
     `FACE_MATCH_THRESHOLD=${config.FACE_MATCH_THRESHOLD ?? '0.5'}`,
     `FACE_CACHE_REFRESH_MINUTES=${config.FACE_CACHE_REFRESH_MINUTES ?? '10'}`,
+    `FACE_CAPTURE_FRAMES=${config.FACE_CAPTURE_FRAMES ?? '5'}`,
     `INSIDER_TAG=${config.INSIDER_TAG ?? 'info'}`,
     `INTRUDER_TAG=${config.INTRUDER_TAG ?? 'alarm'}`,
     '',
