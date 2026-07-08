@@ -26,7 +26,7 @@ def write_bbox_file():
     payload = {
         "ts": now,
         "boxes": state.latest_person_coordinates,
-        "resolution": [cfg.resolution[0], cfg.resolution[1]],
+        "resolution": [state.actual_resolution[0], state.actual_resolution[1]],
     }
     path = f"bbox_{cfg.device_code}.json"
     tmp = path + ".tmp"

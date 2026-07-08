@@ -47,7 +47,15 @@ DAILY_SEND_TIME = os.getenv('DAILY_SEND_TIME', '23:59')  # Format: HH:MM
 
 RTSP_URL = os.getenv('RTSP_URL')
 FALLBACK_VIDEO = os.getenv('FALLBACK_VIDEO', '').strip()  # set to a .mp4 path for debug; empty = no fallback
-resolution = ast.literal_eval(os.getenv("SCREEN_RESOLUTION"))
+
+# SCREEN_RESOLUTION = '[W, H]' resizes every decoded frame to that size (as before), or
+# 'auto' to skip the resize entirely and process each frame at the camera's native
+# resolution — needed to preserve enough pixel density for face detection on
+# high-res (2K/4K) sources instead of crunching everything down to a fixed size
+# before any model (including the face detector) ever sees it.
+_screen_res_raw = os.getenv("SCREEN_RESOLUTION", "[800, 600]").strip()
+AUTO_RESOLUTION = _screen_res_raw.lower() == 'auto'
+resolution = None if AUTO_RESOLUTION else ast.literal_eval(_screen_res_raw)
 
 # Line coordinates (support multiple gates)
 POINT_AXIS = os.getenv('POINT_AXIS', 'X')

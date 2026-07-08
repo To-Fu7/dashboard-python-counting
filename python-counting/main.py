@@ -290,7 +290,7 @@ def main():
         else:
             logging.info("DEBUG_MODE: Continuing without database initialization")
 
-    logging.info(f"RESOLUTION = {cfg.resolution[0], cfg.resolution[1]}")
+    logging.info(f"RESOLUTION = {'auto (camera native)' if cfg.AUTO_RESOLUTION else (cfg.resolution[0], cfg.resolution[1])}")
     logging.info(f"MQTT interval: {cfg.MQTT_INTERVAL_MINUTES} minutes")
     logging.info(f"Daily MQTT send time: {cfg.DAILY_SEND_TIME}")
     logging.info(f"Triton: {cfg.TRITON_URL} model={cfg.TRITON_MODEL} conf={cfg.YOLO_CONFIDENCE}")
@@ -389,8 +389,12 @@ def main():
                     logging.error(f"Failed to read frame from video source: {video_source}")
                     raise Exception(f"Frame read error or video source disconnected: {video_source}")
 
-                # Screen Resolution
-                frame = cv2.resize(frame, (cfg.resolution[0], cfg.resolution[1]))
+                # Screen Resolution — skipped entirely when SCREEN_RESOLUTION=auto,
+                # so detection runs at the camera's native resolution (preserves
+                # pixel density for e.g. face detection on 2K/4K sources).
+                if not cfg.AUTO_RESOLUTION:
+                    frame = cv2.resize(frame, (cfg.resolution[0], cfg.resolution[1]))
+                state.actual_resolution = (frame.shape[1], frame.shape[0])
 
                 # Crop frame to user-defined detection area before inference
                 detection_frame = frame[cfg.CROP_Y1:cfg.CROP_Y2, cfg.CROP_X1:cfg.CROP_X2]

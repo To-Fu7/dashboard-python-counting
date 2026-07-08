@@ -60,8 +60,15 @@ function cropRectToEnv(c: CropRect): string {
   return `[(${c.x1}, ${c.y1}), (${c.x2}, ${c.y2})]`;
 }
 
+function isAutoResolution(res: string | undefined): boolean {
+  return (res ?? '').trim().toLowerCase() === 'auto';
+}
+
 function parseResolution(res: string | undefined): [number, number] {
-  if (!res) return [800, 600];
+  // 'auto' has no fixed pixel size to parse — this is just the placeholder
+  // canvas size used until LineDrawer/ZoneDrawer auto-detect the real one
+  // from the live stream/capture image (see autoDetectResolution prop).
+  if (!res || isAutoResolution(res)) return [1920, 1080];
   try {
     const parsed = JSON.parse(res.replace(/\(/g, '[').replace(/\)/g, ']'));
     if (Array.isArray(parsed) && parsed.length === 2) return [parsed[0], parsed[1]];
@@ -355,12 +362,22 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
                 <Select value={env.SCREEN_RESOLUTION || '[800, 600]'} onValueChange={v => v && setField('SCREEN_RESOLUTION', v)}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="auto">Auto (camera native)</SelectItem>
                     <SelectItem value="[800, 600]">800 × 600</SelectItem>
                     <SelectItem value="[1024, 768]">1024 × 768</SelectItem>
                     <SelectItem value="[1280, 720]">1280 × 720</SelectItem>
-                    <SelectItem value="[1920, 1080]">1920 × 1080</SelectItem>
+                    <SelectItem value="[1920, 1080]">1920 × 1080 (Full HD)</SelectItem>
+                    <SelectItem value="[2560, 1440]">2560 × 1440 (QHD)</SelectItem>
+                    <SelectItem value="[3840, 2160]">3840 × 2160 (4K UHD)</SelectItem>
                   </SelectContent>
                 </Select>
+                {isAutoResolution(env.SCREEN_RESOLUTION) && (
+                  <p className="text-xs text-muted-foreground mt-1.5">
+                    No resize step — every frame is processed at the camera&apos;s own resolution.
+                    Best pixel density for detection (esp. Face on high-res sources), but heavier
+                    on CPU decode/GPU inference than a fixed lower resolution.
+                  </p>
+                )}
               </FormField>
               <FormField label="FPS Limit (0 = unlimited)">
                 <Input type="number" value={env.FPS_LIMIT || '0'} onChange={e => setField('FPS_LIMIT', e.target.value)} />
@@ -615,6 +632,7 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
                   deviceCode={code}
                   containerStatus={status}
                   resolution={parseResolution(env.SCREEN_RESOLUTION)}
+                  autoDetectResolution={isAutoResolution(env.SCREEN_RESOLUTION)}
                   initialLines={lines}
                   offsetAxis={env.LINE_OFFSET || 'Y'}
                   offsetAmount={parseInt(env.LINE_OFFSET_AMOUNT || '5', 10)}
@@ -650,6 +668,7 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
                 <ZoneDrawer
                   deviceCode={code}
                   resolution={parseResolution(env.SCREEN_RESOLUTION)}
+                  autoDetectResolution={isAutoResolution(env.SCREEN_RESOLUTION)}
                   layers={zoneLayers}
                   cropRect={cropRect}
                   onCropChange={zoneMode ? setCropRect : undefined}

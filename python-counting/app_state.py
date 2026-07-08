@@ -32,6 +32,13 @@ last_daily_send = None
 # Store latest person coordinates for MQTT and bbox overlay
 latest_person_coordinates = []
 
+# Actual per-frame resolution (width, height) — equals cfg.resolution when a
+# fixed SCREEN_RESOLUTION is configured, or the camera's native decoded frame
+# size when SCREEN_RESOLUTION=auto. Set once main.py has decoded the first
+# frame; consumers (bbox_writer) read this instead of cfg.resolution so the
+# dashboard always gets the coordinate space detections actually happened in.
+actual_resolution = (800, 600)
+
 # APD violation tracking: track_id -> set of violation labels already alerted
 # (persists for the life of the track; cleared on tracker reset)
 apd_alerted_tracks = defaultdict(set)

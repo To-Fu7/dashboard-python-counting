@@ -30,6 +30,11 @@ interface ZoneDrawerProps {
    *  stream/canvas instead of one ZoneDrawer per zone type. Takes precedence
    *  over initialZones/onChange when provided. */
   layers?: ZoneLayer[];
+  /** When true, `resolution` is just a placeholder canvas size used until the
+   *  live stream/capture image loads — the real canvas size then switches to
+   *  that image's actual pixel dimensions (SCREEN_RESOLUTION=auto: the camera's
+   *  native resolution, unknown ahead of time). */
+  autoDetectResolution?: boolean;
   cropRect?: CropRect | null;
   onCropChange?: (crop: CropRect | null) => void;
 }
@@ -76,6 +81,7 @@ function insideCrop(pt: Point, r: CropRect): boolean {
 export function ZoneDrawer({
   deviceCode,
   resolution = [800, 600],
+  autoDetectResolution = false,
   initialZones,
   onChange,
   layers: layersProp,
@@ -91,6 +97,18 @@ export function ZoneDrawer({
     key: DEFAULT_LAYER_KEY, label: '', color: ZONE_COLORS[0],
     zones: initialZones ?? [], onChange: onChange ?? (() => {}),
   }];
+
+  // Real canvas size while auto-detecting: starts at the placeholder
+  // `resolution` prop, replaced with the stream/capture image's actual pixel
+  // dimensions as soon as one loads.
+  const [detectedResolution, setDetectedResolution] = useState<[number, number]>(resolution);
+  const effectiveResolution = autoDetectResolution ? detectedResolution : resolution;
+
+  function maybeAutoDetect(img: HTMLImageElement) {
+    if (autoDetectResolution && img.naturalWidth > 0 && img.naturalHeight > 0) {
+      setDetectedResolution([img.naturalWidth, img.naturalHeight]);
+    }
+  }
 
   const [bgMode, setBgMode] = useState<'stream' | 'capture'>('stream');
   const [streamFailed, setStreamFailed] = useState(false);
@@ -312,7 +330,7 @@ export function ZoneDrawer({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       const img = new Image();
-      img.onload = () => { captureImgRef.current = img; drawCanvas(); };
+      img.onload = () => { captureImgRef.current = img; maybeAutoDetect(img); drawCanvas(); };
       img.src = data.image;
     } catch (e) {
       setCaptureError(String(e));
@@ -379,7 +397,7 @@ export function ZoneDrawer({
       if (!cropDragRef.current) return;
       const pt = getCanvasPoint(e);
       const { type, startPt, startCrop, corner } = cropDragRef.current;
-      const W = resolution[0], H = resolution[1];
+      const W = effectiveResolution[0], H = effectiveResolution[1];
       if (type === 'draw') {
         setLocalCrop({ ...startCrop, x2: pt.x, y2: pt.y });
       } else if (type === 'move') {
@@ -542,22 +560,22 @@ export function ZoneDrawer({
 
       <div
         className="relative border border-border rounded-lg overflow-hidden bg-gray-900"
-        style={{ aspectRatio: `${resolution[0]}/${resolution[1]}` }}
+        style={{ aspectRatio: `${effectiveResolution[0]}/${effectiveResolution[1]}` }}
       >
         {bgMode === 'stream' && !streamFailed && (
           <img
             ref={streamImgRef}
             src={`/api/stream/${deviceCode}`}
             className="absolute inset-0 w-full h-full object-contain pointer-events-none"
-            onLoad={() => setStreamConnecting(false)}
+            onLoad={e => { setStreamConnecting(false); maybeAutoDetect(e.currentTarget); }}
             onError={() => { setStreamFailed(true); setStreamConnecting(false); }}
             alt=""
           />
         )}
         <canvas
           ref={canvasRef}
-          width={resolution[0]}
-          height={resolution[1]}
+          width={effectiveResolution[0]}
+          height={effectiveResolution[1]}
           className="absolute inset-0 w-full h-full"
           style={{ background: bgMode === 'stream' ? 'transparent' : undefined, cursor: cursorStyle }}
           onClick={handleCanvasClick}

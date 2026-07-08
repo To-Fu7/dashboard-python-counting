@@ -352,6 +352,13 @@ its MQTT alert) fires.
    `imgsz` tetap (mis. 640×640) apa pun resolusi sumbernya; crop yang lebih
    sempit berarti budget piksel yang sama menutupi area fisik lebih kecil →
    kepadatan piksel wajah naik.
+1b. **`SCREEN_RESOLUTION=auto`** kalau kamera sumbernya 2K/4K — biar tidak ada
+   langkah resize paksa ke resolusi lebih rendah sebelum crop/model manapun
+   sempat melihatnya. Ini cara paling murah untuk mempertahankan kepadatan
+   piksel; dampak CPU/GPU-nya tergantung berapa banyak detektor yang aktif —
+   monitor `nvidia-smi`/FPS setelah aktifkan, dan turunkan lagi kalau terlalu
+   berat (kombinasikan dengan `CROP_AREA` yang sempit supaya tidak semua
+   piksel native ikut diproses).
 2. **Re-export model dengan `imgsz` lebih besar** (mis. `face_1280` alih-alih
    `face_640`) — `tools/build_engine.sh` membaca `imgsz` dari `metadata.json`
    tiap model secara otomatis (bukan hardcode 640), jadi tinggal export
@@ -423,7 +430,7 @@ Di-manage dashboard; ditulis ulang tiap save device. Kelompok penting:
 - **Identitas**: `DEVICE_ID/NAME/CODE`
 - **DB**: `PG_HOST/PORT/DB/USER/PASS`
 - **MQTT**: broker/port/user/pass + 5 topic di atas
-- **Stream**: `RTSP_URL`, `SCREEN_RESOLUTION`, `CROP_AREA`, `ANNOTATED_STREAM`, `STREAM_PORT`
+- **Stream**: `RTSP_URL`, `SCREEN_RESOLUTION` (`[W, H]` fixed resize, presets up to 3840×2160/4K UHD, or `auto` — skip the resize entirely and process every frame at the camera's own native resolution; best pixel density for detection, especially Face on high-res sources, at the cost of heavier CPU decode/GPU inference), `CROP_AREA`, `ANNOTATED_STREAM`, `STREAM_PORT`
 - **Inference**: `TRITON_MODEL` (mis. `yolo26m_640`), `YOLO_CONFIDENCE`, `YOLO_IOU` — `TRITON_URL` di-inject compose (`triton:8001`)
 - **Counting**: `DETECTION_MODE` (`line_crossing`/`zone`), `lineA..`/`zoneA..`, `POINT_AXIS`, `SWAP_IN_OUT`, `MERGE_GATES`
 - **Additional detection**: blok `APD_*`, `FIRE_SMOKE_*`/`FIRE_TAG`/`SMOKE_TAG`, `FACE_*`/`INSIDER_TAG`/`INTRUDER_TAG`
