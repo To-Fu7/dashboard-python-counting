@@ -258,15 +258,33 @@ Dedup di-reset bersama tracker saat Triton reconnect.
 
 **Setup model face (2 model, langkah sama seperti APD):**
 
-1. **YOLOv8-face** (detektor, fine-tuned WIDERFACE, single class `face`) —
-   export pakai tooling yang sama:
+1. **YOLOv8-face** (detektor, fine-tuned WIDERFACE, single class `face`;
+   sumber: [akanametov/yolo-face](https://github.com/akanametov/yolo-face),
+   GPL-3.0 — tersedia juga varian s/m/l dan YOLOv11-face di releases yang sama):
    ```bash
+   curl -sL -o yolov8n-face.pt \
+     "https://github.com/akanametov/yolo-face/releases/download/1.0.0/yolov8n-face.pt"
+
    docker run --rm -v "$(pwd):/work" yolo-export \
      --weights /work/yolov8n-face.pt --imgsz 640 --name face_640 --out-dir /work/models
    ```
-2. **ArcFace** (embedder, output 512-d, input umumnya 112×112) — taruh ONNX-nya
-   langsung ke `models/arcface_112/1/model.onnx` + `config.pbtxt` (bukan model
-   ultralytics, jadi tidak lewat `export_model.py`).
+2. **ArcFace** (embedder, output 512-d, input 112×112) — pakai `w600k_r50.onnx`
+   dari paket buffalo_l InsightFace ([deepinsight/insightface](https://github.com/deepinsight/insightface),
+   bobot untuk riset/non-komersial). Bukan model ultralytics, jadi TIDAK lewat
+   `export_model.py` — ONNX-nya ditaruh langsung:
+   ```bash
+   curl -sL -o buffalo_l.zip \
+     "https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip"
+   unzip -o buffalo_l.zip w600k_r50.onnx
+
+   mkdir -p models/arcface_112/1
+   mv w600k_r50.onnx models/arcface_112/1/model.onnx
+   cat > models/arcface_112/config.pbtxt <<'EOF'
+   platform: "onnxruntime_onnx"
+   max_batch_size: 8
+   EOF
+   # (input/output tensor di-autocomplete onnxruntime; client discover via metadata)
+   ```
 3. Build engine + restart Triton (perintah sama seperti di atas).
 4. Di **Settings dashboard** → "Face Embedding Model (ArcFace)" isi `arcface_112`
    — dipakai halaman enrollment; HARUS sama dengan `FACE_EMBED_MODEL` kamera
