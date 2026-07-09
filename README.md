@@ -95,7 +95,7 @@ Prinsip desain:
 
 | Service | Image | Port | Peran |
 |---|---|---|---|
-| `dashboard` | build lokal (`dashboard/Dockerfile`) | 3000 | Next.js — device manager, Triton control, face enrollment, settings, dan reverse-proxy ke `/automation` |
+| `dashboard` | build lokal (`dashboard/Dockerfile`) | 3000 | Next.js — device manager, Triton control, face enrollment, settings, dan reverse-proxy `/nodered` (di-embed via iframe di halaman `/automation`) |
 | `nodered` | `nodered/node-red:latest` | 1880 (langsung, buat dev/debug) | Engine Node-RED asli (flow, node, plugin community tidak dimodifikasi) — lihat §5.6 |
 
 ### Matriks kompatibilitas JetPack ↔ Triton image
@@ -472,13 +472,16 @@ data, kombinasi logic dari beberapa kamera, dsb. Semua node community
 tambahan (install lewat "Manage palette" di editor) persisten di volume
 `nodered-data`, tidak hilang saat container di-restart.
 
-**Arsitektur reverse proxy**: `dashboard/server.js` adalah custom Next.js
-server (bukan `next start` biasa) yang men-cek path request — kalau
-`/automation/*`, di-proxy (HTTP **dan** WebSocket) ke container `nodered`;
+**Arsitektur reverse proxy + iframe**: `dashboard/server.js` adalah custom
+Next.js server (bukan `next start` biasa) yang men-cek path request — kalau
+`/nodered/*`, di-proxy (HTTP **dan** WebSocket) ke container `nodered`;
 selain itu diteruskan ke Next.js seperti biasa. WebSocket wajib di-proxy
 juga karena editor Node-RED pakai channel `comms` buat status deploy
 live/panel debug real-time — proxy HTTP-only (mis. lewat Next.js
-`rewrites()`) bikin panel itu selalu keliatan "disconnected".
+`rewrites()`) bikin panel itu selalu keliatan "disconnected". Halaman
+dashboard **/automation** (`app/automation/page.tsx`) adalah halaman Next.js
+biasa — sidebar dashboard tetap kelihatan — isinya `<iframe src="/nodered">`,
+supaya Node-RED cuma ngisi area konten, bukan gantiin seluruh halaman.
 
 Konsekuensi teknis: dashboard **tidak** lagi pakai Next.js `output: 'standalone'`
 (gak bisa digabung dengan custom server) — image Docker jadi lebih besar
@@ -602,9 +605,10 @@ di server → restart container terkait.
 | Kamera log "INFERENCE UNAVAILABLE" | Triton down — container TIDAK crash, backoff 1s→30s. Cek `curl :8000/v2/health/ready`. |
 | Enrollment error "No Face Embedding Model configured" | Isi Settings → Triton → Face Embedding Model dulu. |
 | Wajah ter-enroll tapi masih "intruder" | (1) tunggu refresh cache ≤10 menit / restart container; (2) cek `FACE_MATCH_THRESHOLD` tidak terlalu tinggi; (3) pastikan model embed enrollment == `FACE_EMBED_MODEL` kamera. |
-| `/automation` balikin 502 "Automation service (Node-RED) is unreachable" | Container `nodered` belum jalan/belum sehat. Cek `docker compose ps nodered` dan `docker compose logs nodered`; pastikan `NODERED_URL` di dashboard cocok dengan nama service (`http://nodered:1880` default). |
-| Editor Node-RED kebuka tapi tema masih merah/abu-abu default | `nodered/settings.js` atau `custom-theme.css` belum ke-mount (cek `docker compose config` untuk konfirmasi path volume), atau versi image Node-RED yang beda class name-nya dari yang di-override — buka devtools di `/automation` untuk cek selector mana yang tidak match. |
-| Panel debug Node-RED selalu "disconnected" | WebSocket `comms` gak ke-proxy dengan benar. Pastikan dashboard jalan lewat `node server.js` (bukan `next start`) — cek log startup harus ada baris "proxying /automation -> ...". |
+| `/automation` (iframe) balikin 502 "Automation service (Node-RED) is unreachable" | Container `nodered` belum jalan/belum sehat. Cek `docker compose ps nodered` dan `docker compose logs nodered`; pastikan `NODERED_URL` di dashboard cocok dengan nama service (`http://nodered:1880` default). |
+| Editor Node-RED kebuka tapi tema masih merah/abu-abu default | **Coba hard refresh dulu** (Ctrl+Shift+R) — Node-RED punya known quirk (khusus Chrome) request CSS tema-nya gagal kalau tab editor sudah terbuka pas container baru restart, hilang setelah refresh. Kalau masih default setelah refresh: buka devtools → Network di `/nodered`, filter "css", cek apakah `custom-theme.css`/`theme.min.css` return 200 atau 404. 404/gak ke-request = `nodered/settings.js`/`custom-theme.css` gak ke-mount dengan benar (cek `docker compose config` buat konfirmasi path volume) atau permission file di host tidak terbaca image (`nodered/node-red` jalan sebagai UID non-root). 200 tapi masih polos = versi Node-RED image beda class name `.red-ui-*` dari yang di-override di `custom-theme.css` — sesuaikan selector-nya. |
+| Panel debug Node-RED selalu "disconnected" | WebSocket `comms` gak ke-proxy dengan benar. Pastikan dashboard jalan lewat `node server.js` (bukan `next start`) — cek log startup harus ada baris "proxying /nodered -> ...". |
+| Iframe `/automation` kosong/blank meski `/nodered` sendiri kebuka normal | Kemungkinan header `X-Frame-Options`/CSP nge-block same-origin framing. `nodered/settings.js` sudah set `httpAdminMiddleware` buat override header ini ke `SAMEORIGIN` — pastikan container sudah di-restart setelah pull commit yang menambahkan ini. |
 
 ### Rollback
 

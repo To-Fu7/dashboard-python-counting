@@ -2,8 +2,10 @@
  * Node-RED settings — mounted read-only into /data/settings.js.
  *
  * Served behind the dashboard's own origin via a path-based reverse proxy
- * (dashboard/server.js proxies /automation/* to this container, HTTP + the
+ * (dashboard/server.js proxies /nodered/* to this container, HTTP + the
  * WebSocket "comms" channel used for live deploy status / the debug panel).
+ * The dashboard's "Automation" page then embeds /nodered in an <iframe> so
+ * the dashboard's own sidebar/layout stays visible around it.
  * httpAdminRoot/httpNodeRoot below must match that proxy path exactly, or
  * the editor's own asset/API/websocket URLs won't resolve once proxied.
  *
@@ -18,10 +20,10 @@ module.exports = {
     uiPort: process.env.PORT || 1880,
 
     // Path this editor/runtime is served under once proxied by the dashboard.
-    httpAdminRoot: '/automation',
+    httpAdminRoot: '/nodered',
     // Flow-defined HTTP in/out nodes live under a distinct sub-path so they
     // never collide with the dashboard's own /api/* Next.js routes.
-    httpNodeRoot: '/automation/api',
+    httpNodeRoot: '/nodered/api',
 
     // Everything below persists in the /data volume (named volume in
     // docker-compose, NOT committed to git — contains flows + credentials +
@@ -61,5 +63,15 @@ module.exports = {
             metrics: false,
             audit: false,
         },
+    },
+
+    // The dashboard embeds this editor in a same-origin <iframe> (app/automation/page.tsx).
+    // Explicitly allow same-origin framing so a stricter default (or a future
+    // Node-RED version defaulting to X-Frame-Options: DENY) can't silently
+    // blank out that iframe.
+    httpAdminMiddleware: function (req, res, next) {
+        res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+        res.setHeader('Content-Security-Policy', "frame-ancestors 'self'");
+        next();
     },
 };

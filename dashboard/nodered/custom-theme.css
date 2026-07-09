@@ -23,7 +23,8 @@
     --dash-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 
-html, body, #red-ui-editor {
+html, body, #red-ui-editor,
+#red-ui-main-container, .red-ui-editor-panes {
     background: var(--dash-bg) !important;
     color: var(--dash-fg) !important;
     font-family: var(--dash-font) !important;

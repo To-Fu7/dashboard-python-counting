@@ -1,9 +1,16 @@
-// Custom Next.js server: proxies /automation/* (HTTP + WebSocket) to the
+// Custom Next.js server: proxies /nodered/* (HTTP + WebSocket) to the
 // Node-RED container so it appears under the dashboard's own origin/port
 // instead of a separate port, then hands everything else to Next's own
 // request handler. WebSocket proxying (Node-RED's live deploy-status/debug
 // panel) is why this is a custom server rather than next.config.ts
 // rewrites() — rewrites don't proxy the `upgrade` event.
+//
+// /nodered is the RAW proxy target (Node-RED's own full-page UI) — the
+// dashboard's actual "Automation" nav item is the Next.js page at
+// app/automation/page.tsx, which keeps the dashboard's own sidebar/layout
+// and embeds this path in an <iframe>. Kept as two distinct paths so an
+// iframe pointed at /nodered isn't itself trying to render inside another
+// iframe's worth of dashboard chrome.
 //
 // This intentionally does NOT use `output: 'standalone'` (see next.config.ts)
 // — a hand-written server.js and Next's own generated standalone server are
@@ -28,20 +35,20 @@ const proxy = httpProxy.createProxyServer({
   changeOrigin: true,
 });
 proxy.on('error', (err, req, res) => {
-  console.error(`[automation proxy] ${err.message}`);
+  console.error(`[nodered proxy] ${err.message}`);
   if (res && !res.headersSent && typeof res.writeHead === 'function') {
     res.writeHead(502, { 'Content-Type': 'text/plain' });
     res.end('Automation service (Node-RED) is unreachable.');
   }
 });
 
-function isAutomationPath(url) {
-  return url === '/automation' || url.startsWith('/automation/');
+function isNoderedPath(url) {
+  return url === '/nodered' || url.startsWith('/nodered/');
 }
 
 app.prepare().then(() => {
   const server = createServer((req, res) => {
-    if (isAutomationPath(req.url)) {
+    if (isNoderedPath(req.url)) {
       proxy.web(req, res);
       return;
     }
@@ -53,7 +60,7 @@ app.prepare().then(() => {
   // deploy status and the debug sidebar — proxy the upgrade event too, not
   // just regular HTTP requests.
   server.on('upgrade', (req, socket, head) => {
-    if (isAutomationPath(req.url)) {
+    if (isNoderedPath(req.url)) {
       proxy.ws(req, socket, head);
     } else {
       socket.destroy();
@@ -61,6 +68,6 @@ app.prepare().then(() => {
   });
 
   server.listen(port, hostname, () => {
-    console.log(`> Ready on http://${hostname}:${port} (proxying /automation -> ${noderedUrl})`);
+    console.log(`> Ready on http://${hostname}:${port} (proxying /nodered -> ${noderedUrl})`);
   });
 });
