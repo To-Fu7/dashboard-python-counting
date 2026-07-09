@@ -193,10 +193,12 @@ function AddCameraDialog({
   onSuccess: () => void;
 }) {
   const [saving, setSaving] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [form, setForm] = useState({
     deviceName: '',
     deviceCode: '',
     rtspUrl: '',
+    deviceId: '',
   });
 
   function handleChange(field: string, value: string) {
@@ -222,7 +224,8 @@ function AddCameraDialog({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       toast.success(`Camera "${form.deviceCode}" created`);
-      setForm({ deviceName: '', deviceCode: '', rtspUrl: '' });
+      setForm({ deviceName: '', deviceCode: '', rtspUrl: '', deviceId: '' });
+      setShowAdvanced(false);
       onSuccess();
     } catch (e) {
       toast.error(`Failed to create: ${e}`);
@@ -262,6 +265,30 @@ function AddCameraDialog({
               placeholder="rtsp://user:pass@192.168.1.1/stream"
             />
           </Field>
+
+          {!showAdvanced ? (
+            <button
+              type="button"
+              onClick={() => setShowAdvanced(true)}
+              className="text-xs text-muted-foreground hover:text-foreground underline"
+            >
+              Advanced options
+            </button>
+          ) : (
+            <Field
+              label="Device ID (optional)"
+              hint="UUID — only set this to reuse an existing device's history (e.g. migrating from another system). Leave blank to generate a new one."
+            >
+              <Input
+                value={form.deviceId}
+                onChange={e => handleChange('deviceId', e.target.value)}
+                placeholder="123e4567-e89b-12d3-a456-426614174000"
+                pattern="^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+                title="Must be a valid UUID"
+              />
+            </Field>
+          )}
+
           <div className="flex gap-2 pt-2 justify-end">
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
             <Button type="submit" disabled={saving}>

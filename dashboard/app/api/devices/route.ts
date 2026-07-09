@@ -56,7 +56,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { deviceCode, deviceName, rtspUrl } = body;
+    const { deviceCode, deviceName, rtspUrl, deviceId: requestedDeviceId } = body;
 
     if (!deviceCode || !deviceName) {
       return NextResponse.json({ error: 'deviceCode and deviceName are required' }, { status: 400 });
@@ -70,8 +70,21 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Device with this code already exists' }, { status: 409 });
     }
 
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (requestedDeviceId) {
+      if (!UUID_RE.test(requestedDeviceId)) {
+        return NextResponse.json({ error: 'deviceId must be a valid UUID' }, { status: 400 });
+      }
+      // Two devices sharing a DEVICE_ID would mix their DB rows (person_inout,
+      // *_hourly are all keyed by device_id) — reject before that can happen.
+      const collision = listEnvFiles().find(code => readDeviceEnv(code)?.DEVICE_ID === requestedDeviceId);
+      if (collision) {
+        return NextResponse.json({ error: `deviceId is already used by device "${collision}"` }, { status: 409 });
+      }
+    }
+
     const settings = readSettings();
-    const deviceId = uuidv4();
+    const deviceId = requestedDeviceId || uuidv4();
 
     writeDeviceEnv(deviceCode, {
       DEVICE_ID: deviceId,
