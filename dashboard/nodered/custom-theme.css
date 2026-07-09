@@ -1,0 +1,126 @@
+/**
+ * Reskin only — Node-RED's editor, node registry, flow engine, and installed
+ * community nodes are all untouched. This overrides the default red/grey
+ * theme to match the dashboard's dark, monochrome + blue-accent palette
+ * (see dashboard/app/globals.css's `.dark` block — same background/foreground/
+ * accent values, approximated to plain hex since Node-RED's CSS predates
+ * oklch()).
+ *
+ * Selectors below target Node-RED 3.x/4.x's `.red-ui-*` class names from the
+ * public editor source. These are reasonably stable across releases but not
+ * guaranteed — if something looks unstyled after upgrading the nodered image,
+ * open devtools on /automation and adjust the selector, not the structure.
+ */
+
+:root {
+    --dash-bg: #1a1a1a;
+    --dash-bg-elevated: #242424;
+    --dash-fg: #fafafa;
+    --dash-fg-muted: #b3b3b3;
+    --dash-border: rgba(255, 255, 255, 0.1);
+    --dash-accent: #3b82f6; /* same blue used for zone/line drawing elsewhere in the dashboard */
+    --dash-radius: 8px;
+    --dash-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+html, body, #red-ui-editor {
+    background: var(--dash-bg) !important;
+    color: var(--dash-fg) !important;
+    font-family: var(--dash-font) !important;
+}
+
+/* Header bar */
+#red-ui-header {
+    background: var(--dash-bg-elevated) !important;
+    border-bottom: 1px solid var(--dash-border) !important;
+}
+#red-ui-header .red-ui-header-title,
+#red-ui-header a {
+    color: var(--dash-fg) !important;
+}
+
+/* Primary tabs (Flow 1, Flow 2, ...) */
+.red-ui-tabs,
+.red-ui-tabs .red-ui-tabs-content {
+    background: var(--dash-bg-elevated) !important;
+    border-color: var(--dash-border) !important;
+}
+.red-ui-tab a,
+.red-ui-tab-link {
+    color: var(--dash-fg-muted) !important;
+}
+.red-ui-tab.active a,
+.red-ui-tab-link.active {
+    color: var(--dash-fg) !important;
+    border-color: var(--dash-accent) !important;
+}
+
+/* Sidebar (info/debug/palette container) */
+.red-ui-sidebar,
+.red-ui-sidebar-header,
+.red-ui-sidebar-footer {
+    background: var(--dash-bg-elevated) !important;
+    border-color: var(--dash-border) !important;
+    color: var(--dash-fg) !important;
+}
+
+/* Node palette (left-hand node list) */
+.red-ui-palette,
+.red-ui-palette-container,
+.red-ui-palette-header {
+    background: var(--dash-bg-elevated) !important;
+    border-color: var(--dash-border) !important;
+    color: var(--dash-fg) !important;
+}
+.red-ui-palette-category > .red-ui-palette-header {
+    color: var(--dash-fg-muted) !important;
+}
+
+/* Flow canvas background */
+#red-ui-workspace,
+.red-ui-workspace-chart {
+    background: var(--dash-bg) !important;
+}
+
+/* Buttons */
+.red-ui-button {
+    border-radius: var(--dash-radius) !important;
+    background: var(--dash-bg-elevated) !important;
+    color: var(--dash-fg) !important;
+    border-color: var(--dash-border) !important;
+}
+.red-ui-button.primary,
+.red-ui-button-small.selected,
+button.red-ui-button.primary {
+    background: var(--dash-accent) !important;
+    border-color: var(--dash-accent) !important;
+    color: #ffffff !important;
+}
+
+/* Edit dialogs / trays (node config panels) */
+.red-ui-tray,
+.red-ui-tray-header,
+.red-ui-tray-footer,
+.red-ui-panel {
+    background: var(--dash-bg-elevated) !important;
+    border-color: var(--dash-border) !important;
+    color: var(--dash-fg) !important;
+}
+
+/* Inputs inside dialogs */
+.red-ui-editableList,
+input[type="text"].red-ui-searchBox-input,
+.red-ui-tray input,
+.red-ui-tray select,
+.red-ui-tray textarea {
+    background: var(--dash-bg) !important;
+    color: var(--dash-fg) !important;
+    border-color: var(--dash-border) !important;
+    border-radius: var(--dash-radius) !important;
+}
+
+/* Deploy button gets the dashboard's accent instead of Node-RED's default red */
+#red-ui-header-button-deploy {
+    background: var(--dash-accent) !important;
+    border-color: var(--dash-accent) !important;
+}

@@ -91,6 +91,13 @@ Prinsip desain:
 | `triton-model-builder` | image tritonserver yang sama, `profiles: [build]` | — | One-shot: build `.plan` dari ONNX via `trtexec`, rewrite `config.pbtxt` ke `tensorrt_plan`+`KIND_GPU` |
 | `counting-<CODE>` (per kamera) | `python:3.11-slim` based | MJPEG 809x | Thin client; dibuat/dihapus otomatis oleh dashboard |
 
+### Compose services (dashboard/docker-compose.yml)
+
+| Service | Image | Port | Peran |
+|---|---|---|---|
+| `dashboard` | build lokal (`dashboard/Dockerfile`) | 3000 | Next.js — device manager, Triton control, face enrollment, settings, dan reverse-proxy ke `/automation` |
+| `nodered` | `nodered/node-red:latest` | 1880 (langsung, buat dev/debug) | Engine Node-RED asli (flow, node, plugin community tidak dimodifikasi) — lihat §5.6 |
+
 ### Matriks kompatibilitas JetPack ↔ Triton image
 
 Engine TensorRT TIDAK portable antar GPU / versi TensorRT. Setelah ganti
@@ -448,6 +455,50 @@ sia-sia di luar zone).
 **Env**: `apdZoneA`, `apdZoneB`, ... / `faceZoneA`, `faceZoneB`, ... — format
 polygon sama seperti `zoneA` (`[(x1,y1),(x2,y2),(x3,y3),...]`, ≥3 titik).
 
+### 5.6 Automation (Node-RED)
+
+Editor flow visual [Node-RED](https://github.com/node-red/node-red) asli —
+engine, node registry, dan ekosistem plugin community-nya **tidak
+dimodifikasi sama sekali**. Yang di-reskin cuma tampilannya (warna/font,
+lihat `dashboard/nodered/custom-theme.css`) supaya senada dengan dashboard,
+lalu disatukan ke origin yang sama lewat reverse proxy — bukan aplikasi
+terpisah di tab/port lain.
+
+**Kegunaan**: Node-RED sudah punya node MQTT bawaan, jadi bisa langsung
+subscribe ke topic yang sistem ini publish (`MQTT_APD_TOPIC`,
+`MQTT_FIRESMOKE_TOPIC`, `MQTT_FACE_TOPIC`, dst. — lihat §6) dan bikin flow
+custom tanpa nulis kode: alert ke Telegram/WhatsApp/webhook, transformasi
+data, kombinasi logic dari beberapa kamera, dsb. Semua node community
+tambahan (install lewat "Manage palette" di editor) persisten di volume
+`nodered-data`, tidak hilang saat container di-restart.
+
+**Arsitektur reverse proxy**: `dashboard/server.js` adalah custom Next.js
+server (bukan `next start` biasa) yang men-cek path request — kalau
+`/automation/*`, di-proxy (HTTP **dan** WebSocket) ke container `nodered`;
+selain itu diteruskan ke Next.js seperti biasa. WebSocket wajib di-proxy
+juga karena editor Node-RED pakai channel `comms` buat status deploy
+live/panel debug real-time — proxy HTTP-only (mis. lewat Next.js
+`rewrites()`) bikin panel itu selalu keliatan "disconnected".
+
+Konsekuensi teknis: dashboard **tidak** lagi pakai Next.js `output: 'standalone'`
+(gak bisa digabung dengan custom server) — image Docker jadi lebih besar
+(full `node_modules`) sebagai gantinya, sudah diverifikasi build & jalan
+normal.
+
+**Keamanan — PENTING**: Node-RED di-setup **tanpa login** (`adminAuth`
+kosong di `nodered/settings.js`), sengaja disamakan dengan sisa dashboard
+yang memang belum punya sistem auth apa pun (network dianggap
+trusted/internal). Ini beda level risiko dari halaman dashboard lain: flow
+Node-RED bisa menjalankan JS/shell command mentah (Function node, exec
+node) — siapa pun yang bisa buka dashboard otomatis bisa jalanin kode di
+server. Kalau network deployment-nya berubah jadi kurang terpercaya (mis.
+expose ke luar), **wajib** tambahkan `adminAuth` di `settings.js` dulu
+sebelum itu terjadi — lihat
+[dokumentasi resmi Node-RED soal securing runtime](https://nodered.org/docs/user-guide/runtime/securing-node-red).
+
+**Env**: `NODERED_URL` (default `http://nodered:1880`, dibaca `server.js` —
+override kalau nama service/port beda dari default compose).
+
 ---
 
 ## 6. MQTT
@@ -551,6 +602,9 @@ di server → restart container terkait.
 | Kamera log "INFERENCE UNAVAILABLE" | Triton down — container TIDAK crash, backoff 1s→30s. Cek `curl :8000/v2/health/ready`. |
 | Enrollment error "No Face Embedding Model configured" | Isi Settings → Triton → Face Embedding Model dulu. |
 | Wajah ter-enroll tapi masih "intruder" | (1) tunggu refresh cache ≤10 menit / restart container; (2) cek `FACE_MATCH_THRESHOLD` tidak terlalu tinggi; (3) pastikan model embed enrollment == `FACE_EMBED_MODEL` kamera. |
+| `/automation` balikin 502 "Automation service (Node-RED) is unreachable" | Container `nodered` belum jalan/belum sehat. Cek `docker compose ps nodered` dan `docker compose logs nodered`; pastikan `NODERED_URL` di dashboard cocok dengan nama service (`http://nodered:1880` default). |
+| Editor Node-RED kebuka tapi tema masih merah/abu-abu default | `nodered/settings.js` atau `custom-theme.css` belum ke-mount (cek `docker compose config` untuk konfirmasi path volume), atau versi image Node-RED yang beda class name-nya dari yang di-override — buka devtools di `/automation` untuk cek selector mana yang tidak match. |
+| Panel debug Node-RED selalu "disconnected" | WebSocket `comms` gak ke-proxy dengan benar. Pastikan dashboard jalan lewat `node server.js` (bukan `next start`) — cek log startup harus ada baris "proxying /automation -> ...". |
 
 ### Rollback
 
