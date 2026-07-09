@@ -165,6 +165,7 @@ docker build -f tools/Dockerfile.export -t yolo-export tools/
 # 3. Export model person counting ke ONNX
 docker run --rm -v "$(pwd):/work" yolo-export \
   --weights /work/yolo26m.pt --imgsz 640 --out-dir /work/models
+# Windows (PowerShell): ganti "$(pwd)" jadi "${PWD}" di semua perintah `docker run -v` di dokumen ini
 
 # 4. Build TensorRT engine di device (skip untuk mode CPU)
 docker compose --profile build run --rm triton-model-builder
@@ -217,9 +218,12 @@ machine counting legacy verbatim. Output: `person_inout` (total harian),
 - **Env**: `FIRE_SMOKE_ENABLED`, `FIRE_SMOKE_MODEL`, `FIRE_SMOKE_CONFIDENCE`,
   `FIRE_TAG`, `SMOKE_TAG`, `FIRE_SMOKE_COOLDOWN_MINUTES`.
 
-Setup model APD + fire/smoke di server (sudah dilakukan di produksi):
+Setup model APD + fire/smoke di server (sudah dilakukan di produksi). Perintah
+di bawah ini jalan di mana pun Docker/Triton-nya (biasanya server Linux via
+SSH) — dua versi disediakan, pakai yang sesuai shell yang kamu jalankan:
 
 ```bash
+# === bash (Linux/server) ===
 cd ~/developer/python/dashboard-python-counting/python-counting
 
 # download weights
@@ -238,6 +242,24 @@ docker run --rm -v "$(pwd):/work" yolo-export \
 docker compose --profile build run --rm triton-model-builder
 docker compose restart triton
 curl -s -X POST localhost:8000/v2/repository/index   # semua model harus READY
+```
+
+```powershell
+# === PowerShell (Windows) ===
+cd D:\path\to\dashboard-python-counting\python-counting
+
+# download weights
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/VoxDroid/Construction-Site-Safety-PPE-Detection/main/Model-Training/Outputs/runs/detect/yolov8s_ppe_css_200_epochs/weights/best.pt" -OutFile apd_best.pt
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/luminous0219/fire-and-smoke-detection-yolov8/main/weights/best.pt" -OutFile firesmoke_best.pt
+
+# export ONNX
+docker run --rm -v "${PWD}:/work" yolo-export --weights /work/apd_best.pt --imgsz 640 --name apd_640 --out-dir /work/models
+docker run --rm -v "${PWD}:/work" yolo-export --weights /work/firesmoke_best.pt --imgsz 640 --name fire_smoke_640 --out-dir /work/models
+
+# build engine + reload  <- WAJIB, tanpa ini model jalan di CPU (onnxruntime)!
+docker compose --profile build run --rm triton-model-builder
+docker compose restart triton
+Invoke-RestMethod -Method POST -Uri "http://localhost:8000/v2/repository/index"   # semua model harus READY
 ```
 
 ### 5.4 Face Recognition (Insider / Intruder)
@@ -262,17 +284,25 @@ Dedup di-reset bersama tracker saat Triton reconnect.
    sumber: [akanametov/yolo-face](https://github.com/akanametov/yolo-face),
    GPL-3.0 — tersedia juga varian s/m/l dan YOLOv11-face di releases yang sama):
    ```bash
+   # bash (Linux/server)
    curl -sL -o yolov8n-face.pt \
      "https://github.com/akanametov/yolo-face/releases/download/1.0.0/yolov8n-face.pt"
 
    docker run --rm -v "$(pwd):/work" yolo-export \
      --weights /work/yolov8n-face.pt --imgsz 640 --name face_640 --out-dir /work/models
    ```
+   ```powershell
+   # PowerShell (Windows)
+   Invoke-WebRequest -Uri "https://github.com/akanametov/yolo-face/releases/download/1.0.0/yolov8n-face.pt" -OutFile yolov8n-face.pt
+
+   docker run --rm -v "${PWD}:/work" yolo-export --weights /work/yolov8n-face.pt --imgsz 640 --name face_640 --out-dir /work/models
+   ```
 2. **ArcFace** (embedder, output 512-d, input 112×112) — pakai `w600k_r50.onnx`
    dari paket buffalo_l InsightFace ([deepinsight/insightface](https://github.com/deepinsight/insightface),
    bobot untuk riset/non-komersial). Bukan model ultralytics, jadi TIDAK lewat
    `export_model.py` — ONNX-nya ditaruh langsung:
    ```bash
+   # bash (Linux/server)
    curl -sL -o buffalo_l.zip \
      "https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip"
    unzip -o buffalo_l.zip w600k_r50.onnx
@@ -286,6 +316,21 @@ Dedup di-reset bersama tracker saat Triton reconnect.
    # max_batch_size WAJIB 0: w600k_r50.onnx punya dimensi batch fixed [1,3,112,112],
    # nilai >0 membuat Triton gagal load ("model does not support batching").
    # (input/output tensor di-autocomplete onnxruntime; client discover via metadata)
+   ```
+   ```powershell
+   # PowerShell (Windows) — Expand-Archive tidak bisa extract satu file saja,
+   # jadi extract semua paket lalu ambil yang dibutuhkan.
+   Invoke-WebRequest -Uri "https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip" -OutFile buffalo_l.zip
+   Expand-Archive -Path buffalo_l.zip -DestinationPath . -Force
+
+   New-Item -ItemType Directory -Force -Path models\arcface_112\1 | Out-Null
+   Move-Item -Force w600k_r50.onnx models\arcface_112\1\model.onnx
+   @'
+   platform: "onnxruntime_onnx"
+   max_batch_size: 0
+   '@ | Set-Content -Path models\arcface_112\config.pbtxt -Encoding utf8
+   # max_batch_size WAJIB 0: w600k_r50.onnx punya dimensi batch fixed [1,3,112,112],
+   # nilai >0 membuat Triton gagal load ("model does not support batching").
    ```
 3. Build engine + restart Triton (perintah sama seperti di atas).
 4. Di **Settings dashboard** → "Face Embedding Model (ArcFace)" isi `arcface_112`
