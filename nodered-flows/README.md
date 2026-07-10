@@ -22,13 +22,39 @@ already runs the production `inout_resample` sync flow.
   conflict key `inout_resample`'s sync uses, a naive `SET data = EXCLUDED.data`
   would **replace** whatever the person-counting sync already wrote for that
   row. These flows instead do `SET data = traffic_countings.data ||
-  EXCLUDED.data` (JSONB merge) and namespace each detection type's payload
-  under its own key — `data.apd`, `data.firesmoke`, `data.face` — sitting
-  alongside `inout_resample`'s top-level `cctv_people_*` keys without
-  colliding with them or each other. Face/APD label keys are dynamic
-  (violation labels, enrolled person names) — namespacing avoids ANY chance
-  of a dynamic key accidentally colliding with a fixed key elsewhere in the
-  row (e.g. a person literally enrolled as "smoke").
+  EXCLUDED.data` (JSONB merge), so writes only ever add/overwrite their own
+  keys in the shared row.
+- **Output shape is FLAT**, matching the existing `cctv_people_*` convention
+  — `cctv_apd`, `cctv_apd_total`, `cctv_fire`, `cctv_fire_total`,
+  `cctv_smoke`, `cctv_smoke_total`, `cctv_face_insider`, `cctv_face_intruder`,
+  `cctv_face_total_insider`, `cctv_face_total_intruder` — **not** nested
+  under a sub-object. `cctv_intrusion`/`cctv_intrusion_total` are a separate
+  concept with no source table in this system (populated by a different flow
+  elsewhere) and are intentionally never touched here; the JSONB merge means
+  that's safe regardless of write order.
+- **Aggregation, not pass-through.** The local tables store dynamic
+  per-label/per-person JSONB (`apd_hourly.data = {"no_helmet": 3, "no_vest": 2,
+  "unique_persons": 4}`, `face_hourly.data = {"Budi": 5, "intruder": 2,
+  "unique_persons": 7}`) — each pipeline's `query` function reduces that down
+  to the flat shape via SQL before `build INSERT` ever sees it:
+  - `cctv_apd` = SUM of every `apd_hourly.data` key **except** `unique_persons`
+    — total violation *events* that hour (can exceed the number of people if
+    one person triggers multiple labels; confirmed against a live test: two
+    synthetic hours with `{no_helmet:3, no_vest:2, unique_persons:4}` and
+    `{no_helmet:1, no_gloves:5, unique_persons:2}` correctly summed to 5 and 6
+    respectively, excluding `unique_persons` both times).
+  - `cctv_face_insider` = SUM of every `face_hourly.data` key **except**
+    `intruder` and `unique_persons` (sum of all named-person counts).
+  - `cctv_face_intruder` = `face_hourly.data->>'intruder'` directly.
+  - `cctv_fire` / `cctv_smoke` = `firesmoke_hourly.data->>'fire'` /
+    `->>'smoke'` directly — these keys are fixed, no aggregation needed.
+  - Every `_total` field is a running SUM across the local calendar day
+    (`Asia/Jakarta`), via the same daily-JOIN CTE pattern the existing
+    `inout_resample` sync uses for `cctv_people_total_in`/`_out` — recomputed
+    fresh each sync cycle from whatever hours exist for that day (not-yet-
+    elapsed hours are zero-valued placeholders from `pregenerate_day`, so
+    this naturally reads as "cumulative so far" without needing a stored
+    running-total column).
 - **No surrogate `id` column.** Unlike `inout_resample` (`id SERIAL PRIMARY
   KEY`), `apd_hourly`/`firesmoke_hourly`/`face_hourly` only have `UNIQUE
   (device_id, hour_start)` as their natural key (see `python-counting/init_db.py`).
