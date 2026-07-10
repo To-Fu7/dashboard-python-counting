@@ -27,7 +27,7 @@ import app_state as state
 import counting_config as cfg
 import lifecycle
 from counting import process_track
-from detection import apd, face, firesmoke
+from detection import apd, face, firesmoke, intrusion
 from inference import TritonEmbedClient, TritonUnavailableError, TritonYoloClient
 from inference.model_metadata import load_model_classes
 from outputs import bbox_writer, db_worker, face_db, mjpeg_server, mqtt_out
@@ -41,9 +41,11 @@ TRITON_BACKOFF_MAX_S = 30.0
 # stream there is no reason to run its inference every frame — sample instead.
 FIRESMOKE_INFER_INTERVAL_S = 1.0
 
-# apd_alerted_tracks / face_alerted_tracks gain one entry per track ever seen; prune when they grow.
+# apd_alerted_tracks / face_alerted_tracks / intrusion_alerted_tracks gain one
+# entry per track ever seen; prune when they grow.
 APD_ALERTED_TRACKS_MAX = 2000
 FACE_ALERTED_TRACKS_MAX = 2000
+INTRUSION_ALERTED_TRACKS_MAX = 2000
 
 _imshow_available = True  # opencv-headless has no GUI; disabled on first failure
 
@@ -245,6 +247,10 @@ def reset_tracking_state(tracker, apd_tracker=None, face_tracker=None):
     state.state_in.clear()
     state.state_out.clear()
     state.zone_inside_prev.clear()
+    # Intrusion reuses this same tracker's track ids directly (no tracker of
+    # its own), so its dedup/position state must reset here too, unconditionally.
+    state.intrusion_alerted_tracks.clear()
+    state.intrusion_last_point.clear()
     if apd_tracker is not None:
         reset_apd_state(apd_tracker)
     if face_tracker is not None:
@@ -351,6 +357,13 @@ def main():
         face_tracker = BYTETracker(BYTETrackerArgs(), frame_rate=30)
         face_db.start_cache_refresh_loop()
         logging.info(f"Face detection enabled: model={cfg.FACE_MODEL} embed={cfg.FACE_EMBED_MODEL}")
+
+    if cfg.INTRUSION_ENABLED:
+        logging.info(
+            f"Intrusion detection enabled: mode={cfg.INTRUSION_DETECTION_MODE} "
+            f"zones={len(cfg.INTRUSION_ZONES)} lines={len(cfg.INTRUSION_LINES)} "
+            f"time_ranges={len(cfg.INTRUSION_TIME_RANGES) or 'unrestricted'}"
+        )
 
     last_waiting_log = time.time()
 
@@ -529,6 +542,15 @@ def main():
                     if draw_now:
                         draw_track(frame, track_id, x1, y1, x2, y2, geom)
 
+                    # Intrusion: restricted zone/line + time-of-day gate, reusing
+                    # this same tracked person (no separate model/tracker).
+                    if cfg.INTRUSION_ENABLED:
+                        intrusion.check_and_process(track_id, (x1, y1, x2, y2), original_frame)
+                        if draw_now and track_id in state.intrusion_alerted_tracks:
+                            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 3)
+                            cv2.putText(frame, 'INTRUSION', (x1, max(0, y1 - 24)),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+
                 # Process APD violations (per-track dedup; draws an orange box)
                 for trk in apd_tracks:
                     track_id = int(trk[4])
@@ -553,6 +575,14 @@ def main():
                 if len(state.apd_alerted_tracks) > APD_ALERTED_TRACKS_MAX:
                     for stale_id in sorted(state.apd_alerted_tracks)[:APD_ALERTED_TRACKS_MAX // 2]:
                         del state.apd_alerted_tracks[stale_id]
+
+                # Bound intrusion_alerted_tracks/intrusion_last_point the same way.
+                if len(state.intrusion_alerted_tracks) > INTRUSION_ALERTED_TRACKS_MAX:
+                    for stale_id in sorted(state.intrusion_alerted_tracks)[:INTRUSION_ALERTED_TRACKS_MAX // 2]:
+                        state.intrusion_alerted_tracks.discard(stale_id)
+                if len(state.intrusion_last_point) > INTRUSION_ALERTED_TRACKS_MAX:
+                    for stale_id in sorted(state.intrusion_last_point)[:INTRUSION_ALERTED_TRACKS_MAX // 2]:
+                        del state.intrusion_last_point[stale_id]
 
                 # Process Fire/Smoke (cooldown-gated alerts; draws every live detection)
                 if firesmoke_dets is not None:

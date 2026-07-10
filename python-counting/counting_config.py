@@ -182,6 +182,62 @@ def load_line_pairs_from_env():
     return line_pairs
 
 
+def load_lines_from_env(prefix='intrusionLine'):
+    """Load single line segments (not in/out gate pairs) from <prefix>A,
+    <prefix>B, ... — same lettered-suffix scheme as load_zones_from_env, but
+    for detectors that only need 'did a track cross this line' (any
+    direction), not the directional IN/OUT counting load_line_pairs_from_env
+    is for."""
+    lines = []
+    for letter in string.ascii_uppercase:
+        val = os.getenv(f'{prefix}{letter}')
+        if not val:
+            break
+        try:
+            pts = ast.literal_eval(val)
+            if len(pts) != 2:
+                logging.warning(f'{prefix}{letter} must have exactly 2 points, skipping')
+                continue
+            lines.append({'name': f'{prefix}{letter}', 'line': [tuple(pts[0]), tuple(pts[1])]})
+            logging.info(f'Loaded {prefix}{letter}: {pts}')
+        except Exception as e:
+            logging.error(f'Failed to parse {prefix}{letter}: {e}')
+    return lines
+
+
+def _parse_time_to_minutes(value):
+    """Parse 'HH:MM' (24-hour clock; HH may be '24' as an end-of-day
+    sentinel, e.g. '24:00') into minutes since midnight."""
+    hh, mm = value.strip().split(':')
+    return int(hh) * 60 + int(mm)
+
+
+def load_time_ranges_from_env(prefix='intrusionTime'):
+    """Load one or more 'HH:MM-HH:MM' time windows from <prefix>A, <prefix>B,
+    ... (same lettered-suffix scheme as load_zones_from_env) so a detector's
+    active hours can be split across multiple, possibly non-contiguous
+    ranges — e.g. intrusionTimeA=12:00-24:00 plus intrusionTimeB=00:00-08:00
+    for 'active every night except business hours'. A range where end <=
+    start is still accepted and treated as wrapping past midnight (e.g.
+    '22:00-06:00' alone covers the same window as that two-range example).
+    No <prefix>* vars set at all means 'always active' — callers apply no
+    time restriction."""
+    ranges = []
+    for letter in string.ascii_uppercase:
+        val = os.getenv(f'{prefix}{letter}')
+        if not val:
+            break
+        try:
+            start_s, end_s = val.split('-')
+            start_min = _parse_time_to_minutes(start_s)
+            end_min = _parse_time_to_minutes(end_s)
+            ranges.append({'name': f'{prefix}{letter}', 'start': start_min, 'end': end_min})
+            logging.info(f'Loaded {prefix}{letter}: {start_s.strip()}-{end_s.strip()}')
+        except Exception as e:
+            logging.error(f'Failed to parse {prefix}{letter}={val!r}: {e}')
+    return ranges
+
+
 def load_zones_from_env(prefix='zone'):
     """Load polygon zones from environment variables (<prefix>A, <prefix>B, ...).
     Same lettered-suffix scheme as the person-counting zones (zoneA, zoneB),
@@ -310,11 +366,30 @@ if FACE_ENABLED and not (FACE_MODEL and FACE_EMBED_MODEL):
     logging.warning("FACE_ENABLED=true but FACE_MODEL/FACE_EMBED_MODEL not both set — Face detection will be disabled")
     FACE_ENABLED = False
 
+# Intrusion detection: a person present in a restricted zone (or crossing a
+# restricted line) during specific hours of day. Independent concept from the
+# main IN/OUT person counting and from the APD/Face restriction zones — no
+# model/tracker of its own, it reuses the already-tracked person detections
+# from the main person tracker (see main.py).
+INTRUSION_ENABLED = os.getenv('INTRUSION_ENABLED', 'false').lower() == 'true'
+INTRUSION_DETECTION_MODE = os.getenv('INTRUSION_DETECTION_MODE', 'zone').lower()  # 'zone' or 'line_crossing'
+INTRUSION_ZONES = load_zones_from_env(prefix='intrusionZone')
+INTRUSION_LINES = load_lines_from_env(prefix='intrusionLine')
+INTRUSION_TIME_RANGES = load_time_ranges_from_env(prefix='intrusionTime')  # empty = always active
+INTRUSION_TAG = os.getenv('INTRUSION_TAG', 'alarm')
+if INTRUSION_ENABLED and INTRUSION_DETECTION_MODE == 'zone' and not INTRUSION_ZONES:
+    logging.warning("INTRUSION_ENABLED=true, mode=zone but no intrusionZone* defined — Intrusion detection will be disabled")
+    INTRUSION_ENABLED = False
+if INTRUSION_ENABLED and INTRUSION_DETECTION_MODE == 'line_crossing' and not INTRUSION_LINES:
+    logging.warning("INTRUSION_ENABLED=true, mode=line_crossing but no intrusionLine* defined — Intrusion detection will be disabled")
+    INTRUSION_ENABLED = False
+
 # Per-type MQTT topics — each defaults to a subpath of the base MQTT_TOPIC but
 # is independently overridable (dashboard: Basic Settings → MQTT Topics).
 MQTT_APD_TOPIC = os.getenv('MQTT_APD_TOPIC', f"{MQTT_TOPIC}/apd")
 MQTT_FIRESMOKE_TOPIC = os.getenv('MQTT_FIRESMOKE_TOPIC', f"{MQTT_TOPIC}/firesmoke")
 MQTT_FACE_TOPIC = os.getenv('MQTT_FACE_TOPIC', f"{MQTT_TOPIC}/face")
+MQTT_INTRUSION_TOPIC = os.getenv('MQTT_INTRUSION_TOPIC', f"{MQTT_TOPIC}/intrusion")
 
 for _dep in ('YOLO_IMGSZ', 'ENABLE_NVDEC', 'YOLO_DEVICE'):
     if os.getenv(_dep):

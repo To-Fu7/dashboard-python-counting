@@ -61,3 +61,11 @@ face_alerted_tracks = set()
 # collected so far, up to cfg.FACE_CAPTURE_FRAMES, before committing to the
 # highest-quality one for embedding/matching (see detection.face.collect_best_shot).
 face_candidates = defaultdict(list)
+
+# Intrusion tracking: track_ids already alerted (fires once per track, ever —
+# same as face_alerted_tracks) + each track's last-seen center point, needed
+# in 'line_crossing' mode to detect a crossing between consecutive frames
+# (unused/empty in 'zone' mode). Both cleared on tracker reset (same reset
+# point as the main tracker, since intrusion reuses its tracks/ids directly).
+intrusion_alerted_tracks = set()
+intrusion_last_point = {}

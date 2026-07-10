@@ -1,4 +1,4 @@
-"""Hourly aggregate writes for APD/fire-smoke (and, later, face) detection —
+"""Hourly aggregate writes for APD/fire-smoke/face/intrusion detection —
 one row per (device, hour_start), each label a running JSONB counter,
 incremented in place. Replaces the old per-event detection_events table.
 
@@ -11,7 +11,7 @@ import logging
 
 from outputs.db_worker import db_query, db_queue_write
 
-VALID_HOURLY_TABLES = ('apd_hourly', 'firesmoke_hourly', 'face_hourly')
+VALID_HOURLY_TABLES = ('apd_hourly', 'firesmoke_hourly', 'face_hourly', 'intrusion_hourly')
 
 
 def increment_hourly(table, device_id, device_code, device_name, hour_start, label):

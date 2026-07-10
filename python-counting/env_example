@@ -63,6 +63,19 @@ PEOPLE_COUNTING_TAG = 'info'
 # SMOKE_TAG = 'alarm'
 # FIRE_SMOKE_COOLDOWN_MINUTES = '5'
 
+# INTRUSION_ENABLED = 'true'
+# No model of its own — reuses the already-tracked person detections from the
+# main person tracker above, restricted by a zone/line + time-of-day window.
+# INTRUSION_DETECTION_MODE = 'zone'          # 'zone' or 'line_crossing'
+# intrusionZoneA = [(0,0),(800,0),(800,600),(0,600)]     # zone mode
+# intrusionLineA = [(0,300),(800,300)]                   # line_crossing mode
+# Incremental — as many intrusionTime<letter> ranges as needed, 'HH:MM-HH:MM'
+# (a range where end <= start wraps past midnight, e.g. '22:00-06:00' alone).
+# No intrusionTime* set at all = always active.
+# intrusionTimeA = '12:00-24:00'
+# intrusionTimeB = '00:00-08:00'
+# INTRUSION_TAG = 'alarm'
+
 JPEG_QUALITY = 40
 
 FPS_LIMIT = 25

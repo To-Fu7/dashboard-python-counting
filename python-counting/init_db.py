@@ -1,6 +1,6 @@
 """One-stop database provisioning: creates person_inout, inout_resample,
-apd_hourly, firesmoke_hourly, face_hourly, and known_faces if they don't
-already exist. Safe to run repeatedly.
+apd_hourly, firesmoke_hourly, face_hourly, intrusion_hourly, and known_faces
+if they don't already exist. Safe to run repeatedly.
 
 Usage:  python init_db.py
 Reads the same PG_* environment variables as main.py (via a .env file or the
@@ -27,7 +27,7 @@ PG_PASS = os.getenv('PG_PASS')
 # "server utama" database, then marks the source row synced. person_inout
 # (whole-day totals, not hourly) and known_faces (not a time-series table)
 # don't participate in that sync, so they don't get the column.
-HOURLY_SYNCED_TABLES = ('inout_resample', 'apd_hourly', 'firesmoke_hourly', 'face_hourly')
+HOURLY_SYNCED_TABLES = ('inout_resample', 'apd_hourly', 'firesmoke_hourly', 'face_hourly', 'intrusion_hourly')
 
 SCHEMA_STATEMENTS = [
     """
@@ -95,6 +95,19 @@ SCHEMA_STATEMENTS = [
     """,
     "CREATE INDEX IF NOT EXISTS idx_face_hourly_device_time ON face_hourly (device_id, hour_start DESC)",
     """
+    CREATE TABLE IF NOT EXISTS intrusion_hourly (
+        device_id UUID NOT NULL,
+        device_code TEXT NOT NULL,
+        device_name TEXT,
+        hour_start TIMESTAMPTZ NOT NULL,
+        data JSONB NOT NULL DEFAULT '{}',
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        is_synced BOOLEAN NOT NULL DEFAULT false,
+        UNIQUE (device_id, hour_start)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_intrusion_hourly_device_time ON intrusion_hourly (device_id, hour_start DESC)",
+    """
     CREATE TABLE IF NOT EXISTS known_faces (
         id UUID PRIMARY KEY,
         person_name TEXT NOT NULL,
@@ -132,7 +145,7 @@ def main():
                 logging.info(f"OK: {stmt.strip().splitlines()[0].strip()}")
         logging.info(
             "Schema is up to date (person_inout, inout_resample, apd_hourly, "
-            "firesmoke_hourly, face_hourly, known_faces)."
+            "firesmoke_hourly, face_hourly, intrusion_hourly, known_faces)."
         )
     finally:
         conn.close()

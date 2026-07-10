@@ -50,6 +50,9 @@ def pregenerate_hourly_tables(day_date):
     if cfg.FACE_ENABLED:
         hourly_aggregate_db.pregenerate_day(
             'face_hourly', cfg.device_id, cfg.device_code, cfg.device_name, day_start)
+    if cfg.INTRUSION_ENABLED:
+        hourly_aggregate_db.pregenerate_day(
+            'intrusion_hourly', cfg.device_id, cfg.device_code, cfg.device_name, day_start)
 
 
 def get_latest_counts(device_id):
