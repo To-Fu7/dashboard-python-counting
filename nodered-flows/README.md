@@ -1,18 +1,19 @@
 # Node-RED flows — hourly-aggregate sync
 
 Importable Node-RED flow JSON for syncing completed hours from this site's
-local `apd_hourly` / `firesmoke_hourly` / `face_hourly` tables up to the
-central "server utama" database, the same way the existing `inout_resample`
-sync already does. **Not related to** `dashboard/nodered/` (the disabled
-in-dashboard Node-RED editor) — this is meant for whatever Node-RED instance
-already runs the production `inout_resample` sync flow.
+local `apd_hourly` / `firesmoke_hourly` / `face_hourly` / `intrusion_hourly`
+tables up to the central "server utama" database, the same way the existing
+`inout_resample` sync already does. **Not related to** `dashboard/nodered/`
+(the disabled in-dashboard Node-RED editor) — this is meant for whatever
+Node-RED instance already runs the production `inout_resample` sync flow.
 
 ## Files
 
-- `hourly-sync-apd-firesmoke-face.json` — one flow tab, 3 parallel pipelines
-  (APD, Fire/Smoke, Face), each mirroring the existing `inout_resample` sync
-  pattern: inject (every 6 min) → build SELECT → fetch local rows → build
-  INSERT for the central DB → run it → mark local rows synced.
+- `hourly-sync-apd-firesmoke-face.json` — one flow tab, 4 parallel pipelines
+  (APD, Fire/Smoke, Face, Intrusion), each mirroring the existing
+  `inout_resample` sync pattern: inject (every 6 min) → build SELECT → fetch
+  local rows → build INSERT for the central DB → run it → mark local rows
+  synced.
 
 ## Design decisions (read before importing)
 
@@ -27,11 +28,12 @@ already runs the production `inout_resample` sync flow.
 - **Output shape is FLAT**, matching the existing `cctv_people_*` convention
   — `cctv_apd`, `cctv_apd_total`, `cctv_fire`, `cctv_fire_total`,
   `cctv_smoke`, `cctv_smoke_total`, `cctv_face_insider`, `cctv_face_intruder`,
-  `cctv_face_total_insider`, `cctv_face_total_intruder` — **not** nested
-  under a sub-object. `cctv_intrusion`/`cctv_intrusion_total` are a separate
-  concept with no source table in this system (populated by a different flow
-  elsewhere) and are intentionally never touched here; the JSONB merge means
-  that's safe regardless of write order.
+  `cctv_face_total_insider`, `cctv_face_total_intruder`, `cctv_intrusion`,
+  `cctv_intrusion_total` — **not** nested under a sub-object.
+  `cctv_intrusion`/`cctv_intrusion_total` used to be intentionally skipped by
+  this flow (no source table existed yet) — now that `intrusion_hourly`
+  exists (`python-counting/detection/intrusion.py`), the 4th pipeline sources
+  them for real, same as every other field.
 - **Aggregation, not pass-through.** The local tables store dynamic
   per-label/per-person JSONB (`apd_hourly.data = {"no_helmet": 3, "no_vest": 2,
   "unique_persons": 4}`, `face_hourly.data = {"Budi": 5, "intruder": 2,
@@ -48,6 +50,10 @@ already runs the production `inout_resample` sync flow.
   - `cctv_face_intruder` = `face_hourly.data->>'intruder'` directly.
   - `cctv_fire` / `cctv_smoke` = `firesmoke_hourly.data->>'fire'` /
     `->>'smoke'` directly — these keys are fixed, no aggregation needed.
+  - `cctv_intrusion` = `intrusion_hourly.data->>'intrusion'` directly (fixed
+    key, same as fire/smoke — `intrusion_hourly` has no dynamic per-label
+    keys, just `intrusion` and `unique_persons`, and both are always equal
+    since `detection/intrusion.py` fires at most once per track).
   - Every `_total` field is a running SUM across the local calendar day
     (`Asia/Jakarta`), via the same daily-JOIN CTE pattern the existing
     `inout_resample` sync uses for `cctv_people_total_in`/`_out` — recomputed
@@ -56,8 +62,9 @@ already runs the production `inout_resample` sync flow.
     this naturally reads as "cumulative so far" without needing a stored
     running-total column).
 - **No surrogate `id` column.** Unlike `inout_resample` (`id SERIAL PRIMARY
-  KEY`), `apd_hourly`/`firesmoke_hourly`/`face_hourly` only have `UNIQUE
-  (device_id, hour_start)` as their natural key (see `python-counting/init_db.py`).
+  KEY`), `apd_hourly`/`firesmoke_hourly`/`face_hourly`/`intrusion_hourly` only
+  have `UNIQUE (device_id, hour_start)` as their natural key (see
+  `python-counting/init_db.py`).
   The "mark as synced" step here matches on `(device_id, hour_start)` tuples
   instead of a single id list.
 - **`is_synced` column**: added via `python-counting/init_db.py` (migration:
@@ -92,7 +99,7 @@ already runs the production `inout_resample` sync flow.
 ## Import steps
 
 1. In Node-RED: menu → Import → paste/select `hourly-sync-apd-firesmoke-face.json`.
-2. Confirm it lands on its own new tab ("Hourly Sync (APD/FireSmoke/Face)").
+2. Confirm it lands on its own new tab ("Hourly Sync (APD/FireSmoke/Face/Intrusion)").
 3. Open each `postgresql` node once to confirm it resolved to the expected
    existing DB config (LOCAL vs SERVER UTAMA) — Node-RED matches by id, but
    worth a visual check before deploying.
