@@ -22,6 +22,13 @@ PG_DB = os.getenv('PG_DB')
 PG_USER = os.getenv('PG_USER')
 PG_PASS = os.getenv('PG_PASS')
 
+# Tables with an hour_start column get is_synced (below) — a flag for the
+# Node-RED job that periodically pushes completed hours to the central
+# "server utama" database, then marks the source row synced. person_inout
+# (whole-day totals, not hourly) and known_faces (not a time-series table)
+# don't participate in that sync, so they don't get the column.
+HOURLY_SYNCED_TABLES = ('inout_resample', 'apd_hourly', 'firesmoke_hourly', 'face_hourly')
+
 SCHEMA_STATEMENTS = [
     """
     CREATE TABLE IF NOT EXISTS person_inout (
@@ -44,6 +51,7 @@ SCHEMA_STATEMENTS = [
         interval_out INTEGER NOT NULL DEFAULT 0,
         hour_start TIMESTAMPTZ NOT NULL,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        is_synced BOOLEAN NOT NULL DEFAULT false,
         UNIQUE (device_id, hour_start)
     )
     """,
@@ -55,6 +63,7 @@ SCHEMA_STATEMENTS = [
         hour_start TIMESTAMPTZ NOT NULL,
         data JSONB NOT NULL DEFAULT '{}',
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        is_synced BOOLEAN NOT NULL DEFAULT false,
         UNIQUE (device_id, hour_start)
     )
     """,
@@ -67,6 +76,7 @@ SCHEMA_STATEMENTS = [
         hour_start TIMESTAMPTZ NOT NULL,
         data JSONB NOT NULL DEFAULT '{}',
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        is_synced BOOLEAN NOT NULL DEFAULT false,
         UNIQUE (device_id, hour_start)
     )
     """,
@@ -79,6 +89,7 @@ SCHEMA_STATEMENTS = [
         hour_start TIMESTAMPTZ NOT NULL,
         data JSONB NOT NULL DEFAULT '{}',
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        is_synced BOOLEAN NOT NULL DEFAULT false,
         UNIQUE (device_id, hour_start)
     )
     """,
@@ -95,6 +106,19 @@ SCHEMA_STATEMENTS = [
     """,
     "CREATE INDEX IF NOT EXISTS idx_known_faces_person ON known_faces (person_name)",
 ]
+
+# Migration for tables that may already exist (pre-dating is_synced) without
+# the column — CREATE TABLE IF NOT EXISTS above only helps brand-new
+# deployments, existing ones need it added explicitly. Also adds a partial
+# index so the Node-RED sync job's `WHERE is_synced = false` scan stays fast
+# regardless of how large these tables grow (only unsynced rows are indexed).
+for _table in HOURLY_SYNCED_TABLES:
+    SCHEMA_STATEMENTS.append(
+        f"ALTER TABLE {_table} ADD COLUMN IF NOT EXISTS is_synced BOOLEAN NOT NULL DEFAULT false"
+    )
+    SCHEMA_STATEMENTS.append(
+        f"CREATE INDEX IF NOT EXISTS idx_{_table}_unsynced ON {_table} (hour_start) WHERE is_synced = false"
+    )
 
 
 def main():

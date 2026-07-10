@@ -1,3 +1,8 @@
+# Node-RED ("Automation" nav item) is temporarily DISABLED — see
+# nodered/DEV_NOTES.md (gitignored) for status/why. Re-enable by uncommenting
+# the `nodered` service below, the `dashboard` service's `depends_on`/
+# `NODERED_URL` lines, and the matching commented-out blocks in
+# server.js / components/Sidebar.tsx.
 services:
   dashboard:
     build:
@@ -20,31 +25,31 @@ services:
       - PYTHON_COUNTING_DIR=/python-counting
       - HOST_PYTHON_COUNTING_DIR=${HOST_PYTHON_COUNTING_DIR}
       - SETTINGS_FILE=/app/data/settings.json
-      - NODERED_URL=http://nodered:1880
+      # - NODERED_URL=http://nodered:1880
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=utility
     networks:
       - default
       - envisions
-    depends_on:
-      - nodered
-  nodered:
-    image: nodered/node-red:latest
-    container_name: nodered
-    restart: unless-stopped
-    volumes:
-      - nodered-data:/data
-      - ./nodered/settings.js:/data/settings.js:ro
-      - ./nodered/custom-theme.css:/data/custom-theme.css:ro
-    ports:
-      - "1880:1880"   # direct access for local dev / debugging only — the
-                        # dashboard proxies /automation to this internally
-                        # over the envisions network in normal use
-    networks:
-      - envisions
+    # depends_on:
+    #   - nodered
+  # nodered:
+  #   image: nodered/node-red:latest
+  #   container_name: nodered
+  #   restart: unless-stopped
+  #   volumes:
+  #     - nodered-data:/data
+  #     - ./nodered/settings.js:/data/settings.js:ro
+  #     - ./nodered/custom-theme.css:/data/custom-theme.css:ro
+  #   ports:
+  #     - "1880:1880"   # direct access for local dev / debugging only — the
+  #                       # dashboard proxies /automation to this internally
+  #                       # over the envisions network in normal use
+  #   networks:
+  #     - envisions
 volumes:
   dashboard-data:
-  nodered-data:
+  # nodered-data:
 networks:
   default: {}
   envisions:

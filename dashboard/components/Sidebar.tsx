@@ -3,7 +3,8 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { LayoutDashboard, Camera, Settings, ScrollText, Activity, Tv2, UserSquare2, Workflow } from 'lucide-react';
+import { LayoutDashboard, Camera, Settings, ScrollText, Activity, Tv2, UserSquare2 } from 'lucide-react';
+// import { Workflow } from 'lucide-react'; // re-add alongside the Automation nav item below when re-enabling
 import { cn } from '@/lib/utils';
 
 const NAV_ITEMS = [
@@ -11,7 +12,9 @@ const NAV_ITEMS = [
   { href: '/devices', label: 'Devices', icon: Camera },
   { href: '/stream', label: 'Stream', icon: Tv2 },
   { href: '/faces', label: 'Face Enrollment', icon: UserSquare2 },
-  { href: '/automation', label: 'Automation', icon: Workflow },
+  // Node-RED integration temporarily disabled (server.js: NODERED_ENABLED) —
+  // see nodered/DEV_NOTES.md (gitignored). Re-add once re-enabled:
+  // { href: '/automation', label: 'Automation', icon: Workflow },
   { href: '/logs', label: 'Logs', icon: ScrollText },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];

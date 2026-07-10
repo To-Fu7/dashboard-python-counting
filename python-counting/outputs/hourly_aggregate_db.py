@@ -18,7 +18,16 @@ def increment_hourly(table, device_id, device_code, device_name, hour_start, lab
     """Increment data->>label by 1 for this device's hour_start row, creating
     the row first if it doesn't exist (defensive — pregenerate_day() should
     already have created it, but this stays correct either way). Async,
-    fire-and-forget, same as the old insert_detection_event."""
+    fire-and-forget, same as the old insert_detection_event.
+
+    Resets is_synced back to false on every update: in normal operation an
+    increment only ever targets the current, not-yet-synced hour (state.
+    current_tracking_hour only advances at hour rotation, same guarantee
+    inout_resample's own interval updates rely on), so this is mostly a
+    defensive no-op — but it's what keeps a rare late-arriving event (e.g.
+    right at an hour boundary) from silently never reaching the central
+    "server utama" database after the Node-RED sync job already marked that
+    hour synced."""
     if table not in VALID_HOURLY_TABLES:
         logging.error(f"Unknown hourly table '{table}' — increment dropped")
         return
@@ -31,7 +40,8 @@ def increment_hourly(table, device_id, device_code, device_name, hour_start, lab
                 array[%s],
                 to_jsonb(COALESCE(({table}.data ->> %s)::int, 0) + 1)
             ),
-            updated_at = now()
+            updated_at = now(),
+            is_synced = false
     """
     db_queue_write(query, (device_id, device_code, device_name, hour_start, label, label, label))
 

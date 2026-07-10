@@ -43,6 +43,9 @@ next-env.d.ts
 # Dashboard data (runtime, not committed)
 /data/
 
+# Node-RED integration dev notes — WIP status/planning, not project docs
+/nodered/DEV_NOTES.md
+
 # Claude Code meta files
 CLAUDE.md
 AGENTS.md

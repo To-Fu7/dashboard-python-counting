@@ -27,6 +27,8 @@ def test_increment_hourly_valid_table():
     check("label appears 3 times as a bound param (build, path, lookup)",
           params.count('no_helmet') == 3, f"params={params}")
     check("no other table name leaked into the query", 'firesmoke_hourly' not in query, query)
+    check("update resets is_synced back to false (late-arrival re-sync safety net)",
+          'is_synced = false' in query, query)
 
 
 def test_increment_hourly_rejects_unknown_table():
