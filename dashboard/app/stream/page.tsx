@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
+import Hls from 'hls.js';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -114,6 +115,7 @@ function drawLineOverlay(
 
 function StreamCell({ device }: { device: Device }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const [streamLoaded, setStreamLoaded] = useState(false);
   const [streamError, setStreamError] = useState(false);
   const [counts, setCounts] = useState<{ in: number; out: number } | null>(null);
@@ -153,6 +155,49 @@ function StreamCell({ device }: { device: Device }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lines.length, zones.length, detectionMode, offsetAxis, offsetAmount]);
 
+  // One shared HLS mux per camera lives in stream-gateway (not per viewer) —
+  // this is what actually fixes the OOM crash: N browser tabs watching this
+  // grid no longer means N ffmpeg processes spawned inside the dashboard
+  // container (see /api/stream/[code]/route.ts's plain=1 fallback, still
+  // used elsewhere but no longer on this page's hot path).
+  useEffect(() => {
+    if (device.status !== 'running') return;
+    const video = videoRef.current;
+    if (!video) return;
+
+    let hls: Hls | null = null;
+    let cancelled = false;
+    setStreamLoaded(false);
+    setStreamError(false);
+
+    fetch(`/api/devices/${device.deviceCode}/stream-urls`)
+      .then(r => r.json())
+      .then(data => {
+        if (cancelled) return;
+        const hlsUrl: string | undefined = data?.main?.hls;
+        if (!hlsUrl) { setStreamError(true); return; }
+
+        if (video.canPlayType('application/vnd.apple.mpegurl')) {
+          video.src = hlsUrl; // Safari: native HLS support, no hls.js needed
+        } else if (Hls.isSupported()) {
+          hls = new Hls({ lowLatencyMode: true });
+          hls.loadSource(hlsUrl);
+          hls.attachMedia(video);
+          hls.on(Hls.Events.ERROR, (_evt, data) => {
+            if (data.fatal && !cancelled) setStreamError(true);
+          });
+        } else {
+          setStreamError(true);
+        }
+      })
+      .catch(() => { if (!cancelled) setStreamError(true); });
+
+    return () => {
+      cancelled = true;
+      hls?.destroy();
+    };
+  }, [device.deviceCode, device.status]);
+
   if (device.status !== 'running') {
     return (
       <div className="relative bg-black rounded-lg overflow-hidden aspect-video">
@@ -179,13 +224,15 @@ function StreamCell({ device }: { device: Device }) {
     <div className="relative bg-black rounded-lg overflow-hidden aspect-video group">
       {!streamError ? (
         <>
-          {/* Native MJPEG stream — browser handles frame decoding, no JS per-frame overhead */}
-          <img
-            src={`/api/stream/${device.deviceCode}?fps=3&q=12&plain=1`}
+          {/* HLS via stream-gateway — one shared mux per camera, not one ffmpeg per viewer */}
+          <video
+            ref={videoRef}
             className="absolute inset-0 w-full h-full object-contain"
-            onLoad={() => setStreamLoaded(true)}
+            autoPlay
+            muted
+            playsInline
+            onPlaying={() => setStreamLoaded(true)}
             onError={() => setStreamError(true)}
-            alt=""
           />
           {/* Static canvas overlay for detection lines/zones — redrawn only when config changes */}
           <canvas
