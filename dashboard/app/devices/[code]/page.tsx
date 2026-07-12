@@ -934,7 +934,16 @@ function StreamSettingsTab({
               <p className="col-span-3 text-xs text-muted-foreground">
                 Port availability is checked against ports this dashboard already knows about
                 (other devices&apos; forwards + reserved stack ports) — not a live OS-level socket
-                probe. Applied to the existing nginx container on Save.
+                probe. Applied to the existing nginx container&apos;s stream{'{}'} block on Save
+                (existing hand-written forwards are preserved).
+              </p>
+              <p className="col-span-3 text-xs text-amber-500">
+                One-time manual step required per Listen Port: the nginx container&apos;s own
+                docker-compose port mapping must also publish this port (e.g. add
+                &quot;{env.PORTFWD_LISTEN_PORT || '5546'}:{env.PORTFWD_LISTEN_PORT || '5546'}&quot;
+                and recreate that container) — this dashboard only manages nginx&apos;s internal
+                config, not its published port list, since it doesn&apos;t own that container&apos;s
+                lifecycle.
               </p>
             </div>
           )}
