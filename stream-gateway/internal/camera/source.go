@@ -529,14 +529,18 @@ func (s *Source) connectOnce(ctx context.Context) (*sinkBundle, <-chan error, er
 		return nil, nil, fmt.Errorf("invalid RTSP URL: %w", err)
 	}
 
-	// TEMP DIAGNOSTIC: forcing UDP instead of TCP-interleaved to test the
-	// hypothesis that this camera's TCP-interleaved data channel silently
-	// delivers zero RTP packets despite SETUP/PLAY succeeding.
-	protoUDP := gortsplib.ProtocolUDP
+	// TEMP DIAGNOSTIC: UDP transport ruled out — with Protocol=UDP, gortsplib
+	// picks ephemeral container-internal ports for RTP/RTCP that are never
+	// published in docker-compose, so even if the camera responded over UDP
+	// the packets couldn't reach this container. Reverted to TCP-interleaved
+	// (which needs no extra ports — data rides the same outbound TCP socket
+	// this client already opened) while diagnosing why zero video packets
+	// arrive over it despite SETUP/PLAY succeeding.
+	protoTCP := gortsplib.ProtocolTCP
 	client := &gortsplib.Client{
 		Scheme:   u.Scheme,
 		Host:     u.Host,
-		Protocol: &protoUDP,
+		Protocol: &protoTCP,
 	}
 
 	if err := client.Start(); err != nil {
@@ -554,6 +558,7 @@ func (s *Source) connectOnce(ctx context.Context) (*sinkBundle, <-chan error, er
 		client.Close()
 		return nil, nil, err
 	}
+	log.Printf("DEBUG [%s] SDP describe done, videoCodec=%s hasVideoParams(pre-Play)=%v", s.code, bridge.videoCodec, bridge.hasVideoParams())
 
 	// attach() registers the RTP callbacks once, before Play() — with no
 	// sinks yet. The callbacks still decode every packet (needed both to
