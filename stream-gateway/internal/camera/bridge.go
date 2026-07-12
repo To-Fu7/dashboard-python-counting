@@ -2,6 +2,7 @@ package camera
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/bluenviron/gortsplib/v5"
 	"github.com/bluenviron/gortsplib/v5/pkg/description"
@@ -40,6 +41,16 @@ func (a *opusAdapter) Decode(pkt *rtp.Packet) ([][]byte, error) {
 // samples into it. G711 audio has no HLS muxer available (see the plan's
 // known limitation) so it's never selected here; a G711-only camera simply
 // gets no audio on the HLS path.
+//
+// Many real cameras (confirmed live against a production Hikvision-style
+// H265 stream) don't announce SPS/PPS/VPS in the SDP at all — they send
+// them in-band as ordinary NAL units instead, which is legal per RTP but
+// means the format.H264/H265 structs FindFormat gives us can start out
+// completely empty. attach() extracts them from the first access units
+// that carry them (via gortsplib's own SafeSetParams — a manual API no
+// caller in gortsplib itself invokes) so trackParams() has real data by
+// the time the sinks actually need it (see Source.connectOnce's priming
+// wait).
 type rtspBridge struct {
 	client *gortsplib.Client
 
@@ -56,6 +67,10 @@ type rtspBridge struct {
 	audioDec   sampleDecoder
 	mpeg4Forma *format.MPEG4Audio
 	opusForma  *format.Opus
+
+	mu       sync.Mutex
+	sinks    []sampleSink
+	rtpSinks []rtpSink
 }
 
 func newRTSPBridge(client *gortsplib.Client, desc *description.Session, includeAudio bool) (*rtspBridge, error) {
@@ -134,16 +149,103 @@ func newRTSPBridge(client *gortsplib.Client, desc *description.Session, includeA
 	return b, nil
 }
 
+// hasVideoParams reports whether we currently know the parameter sets
+// (SPS/PPS, or VPS/SPS/PPS for H265) this video codec needs to build an
+// HLS/MSE init segment — either because the SDP announced them, or because
+// updateParamsFromAU has since extracted them from an in-band NAL unit.
+func (b *rtspBridge) hasVideoParams() bool {
+	switch b.videoCodec {
+	case "h264":
+		sps, pps := b.h264Forma.SafeParams()
+		return len(sps) > 0 && len(pps) > 0
+	case "h265":
+		vps, sps, pps := b.h265Forma.SafeParams()
+		return len(vps) > 0 && len(sps) > 0 && len(pps) > 0
+	default:
+		return false
+	}
+}
+
+// updateParamsFromAU scans a decoded access unit for parameter-set NAL
+// units and, if found, records them via SafeSetParams so a later
+// trackParams() call (and hasVideoParams above) sees them. gortsplib itself
+// never calls SafeSetParams — extracting in-band parameters is left
+// entirely to the caller, which is what this does.
+func (b *rtspBridge) updateParamsFromAU(au [][]byte) {
+	switch b.videoCodec {
+	case "h264":
+		var sps, pps []byte
+		for _, nalu := range au {
+			if len(nalu) == 0 {
+				continue
+			}
+			switch nalu[0] & 0x1F {
+			case 7: // SPS
+				sps = nalu
+			case 8: // PPS
+				pps = nalu
+			}
+		}
+		if sps != nil || pps != nil {
+			// Merge with whatever's already known and save the merge
+			// unconditionally — a real camera can (and did, live) send SPS
+			// and PPS in separate access units, so a partial discovery here
+			// must still be persisted for a later AU to complete, not
+			// discarded just because this one AU alone isn't complete.
+			curSPS, curPPS := b.h264Forma.SafeParams()
+			if sps == nil {
+				sps = curSPS
+			}
+			if pps == nil {
+				pps = curPPS
+			}
+			b.h264Forma.SafeSetParams(sps, pps)
+		}
+	case "h265":
+		var vps, sps, pps []byte
+		for _, nalu := range au {
+			if len(nalu) < 2 {
+				continue
+			}
+			switch (nalu[0] >> 1) & 0x3F {
+			case 32: // VPS_NUT
+				vps = nalu
+			case 33: // SPS_NUT
+				sps = nalu
+			case 34: // PPS_NUT
+				pps = nalu
+			}
+		}
+		if vps != nil || sps != nil || pps != nil {
+			// Same "persist partial discoveries" reasoning as H264 above —
+			// confirmed live that a real camera can spread VPS/SPS/PPS
+			// across more than one access unit.
+			curVPS, curSPS, curPPS := b.h265Forma.SafeParams()
+			if vps == nil {
+				vps = curVPS
+			}
+			if sps == nil {
+				sps = curSPS
+			}
+			if pps == nil {
+				pps = curPPS
+			}
+			b.h265Forma.SafeSetParams(vps, sps, pps)
+		}
+	}
+}
+
+// trackParams reads the CURRENT (possibly in-band-discovered, via
+// SafeParams) codec parameters. Call after hasVideoParams() is true.
 func (b *rtspBridge) trackParams() codecparams.Set {
 	p := codecparams.Set{}
 	switch b.videoCodec {
 	case "h264":
-		p.VideoH264 = &codecparams.H264{SPS: b.h264Forma.SPS, PPS: b.h264Forma.PPS, ClockRate: b.videoForma.ClockRate()}
+		sps, pps := b.h264Forma.SafeParams()
+		p.VideoH264 = &codecparams.H264{SPS: sps, PPS: pps, ClockRate: b.videoForma.ClockRate()}
 	case "h265":
-		p.VideoH265 = &codecparams.H265{
-			VPS: b.h265Forma.VPS, SPS: b.h265Forma.SPS, PPS: b.h265Forma.PPS,
-			ClockRate: b.videoForma.ClockRate(),
-		}
+		vps, sps, pps := b.h265Forma.SafeParams()
+		p.VideoH265 = &codecparams.H265{VPS: vps, SPS: sps, PPS: pps, ClockRate: b.videoForma.ClockRate()}
 	}
 	switch b.audioCodec {
 	case "mpeg4audio":
@@ -172,22 +274,48 @@ type rtpSink interface {
 	WriteAudioRTP(pkt *rtp.Packet)
 }
 
-// attach wires the RTP callbacks that decode samples and fan them out to
-// every sampleSink, and separately forwards the raw packet to every
-// rtpSink. Must be called after the sinks have been built from
-// trackParams() and before Play().
-func (b *rtspBridge) attach(sinks []sampleSink, rtpSinks []rtpSink) {
+// setSinks switches attach()'s already-running callbacks over to forwarding
+// into real sinks. Safe to call concurrently with the RTP callbacks (mu-guarded).
+func (b *rtspBridge) setSinks(sinks []sampleSink, rtpSinks []rtpSink) {
+	b.mu.Lock()
+	b.sinks = sinks
+	b.rtpSinks = rtpSinks
+	b.mu.Unlock()
+}
+
+func (b *rtspBridge) currentSinks() ([]sampleSink, []rtpSink) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.sinks, b.rtpSinks
+}
+
+// attach wires the RTP callbacks that decode samples, extract in-band codec
+// parameters, and fan decoded samples/raw packets out to whatever sinks are
+// currently set (none, until a later setSinks call). Must be called once,
+// before Play() (see Source.connectOnce): the callbacks still run the full
+// decode + parameter-extraction path with no sinks attached, which is
+// exactly the priming Source.connectOnce needs while it waits for
+// hasVideoParams() to go true before building the real sinks and calling
+// setSinks(...) — gortsplib gives no thread-safety guarantee for changing
+// callbacks after Play(), so the callbacks themselves are registered
+// exactly once and only the sink slice they read is ever swapped.
+func (b *rtspBridge) attach() {
 	b.client.OnPacketRTP(b.videoMedia, b.videoForma, func(pkt *rtp.Packet) {
+		au, err := b.videoDec.Decode(pkt)
+		if err != nil {
+			return
+		}
+		b.updateParamsFromAU(au)
+
+		sinks, rtpSinks := b.currentSinks()
 		for _, rs := range rtpSinks {
 			rs.WriteVideoRTP(pkt)
 		}
-
-		pts, ok := b.client.PacketPTS(b.videoMedia, pkt)
-		if !ok {
+		if len(sinks) == 0 {
 			return
 		}
-		au, err := b.videoDec.Decode(pkt)
-		if err != nil {
+		pts, ok := b.client.PacketPTS(b.videoMedia, pkt)
+		if !ok {
 			return
 		}
 		for _, sink := range sinks {
@@ -202,8 +330,12 @@ func (b *rtspBridge) attach(sinks []sampleSink, rtpSinks []rtpSink) {
 
 	if b.audioMedia != nil {
 		b.client.OnPacketRTP(b.audioMedia, b.audioForma, func(pkt *rtp.Packet) {
+			sinks, rtpSinks := b.currentSinks()
 			for _, rs := range rtpSinks {
 				rs.WriteAudioRTP(pkt)
+			}
+			if len(sinks) == 0 {
+				return
 			}
 
 			pts, ok := b.client.PacketPTS(b.audioMedia, pkt)

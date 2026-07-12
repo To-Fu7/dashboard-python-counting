@@ -552,6 +552,35 @@ func (s *Source) connectOnce(ctx context.Context) (*sinkBundle, <-chan error, er
 		return nil, nil, err
 	}
 
+	// attach() registers the RTP callbacks once, before Play() — with no
+	// sinks yet. The callbacks still decode every packet (needed both to
+	// advance the depacketizer's own state and to extract in-band
+	// parameter sets — see bridge.updateParamsFromAU), they just drop the
+	// result until setSinks() is called below. This must happen before
+	// Play(), not after: gortsplib gives no thread-safety guarantee for
+	// registering/changing a callback while packets are actively arriving.
+	bridge.attach()
+
+	if _, err := client.Play(nil); err != nil {
+		client.Close()
+		return nil, nil, fmt.Errorf("play: %w", err)
+	}
+
+	// Many real cameras (confirmed live against a production Hikvision-style
+	// H265 stream) don't announce SPS/PPS/VPS in the SDP — they send them
+	// in-band instead, which is legal but means we can't build the HLS/MSE
+	// init segments immediately after SETUP the way a well-behaved camera
+	// allows. Wait briefly for the first in-band parameter set to arrive
+	// (a no-op wait — resolves on the first check — for cameras that did
+	// announce them in the SDP).
+	if !waitForVideoParams(ctx, bridge, connectTimeout) {
+		client.Close()
+		return nil, nil, fmt.Errorf(
+			"timed out waiting for %s parameter sets — camera never sent them in-band or via SDP",
+			bridge.videoCodec,
+		)
+	}
+
 	params := bridge.trackParams()
 
 	hlsSink, err := hls.NewSink(params)
@@ -574,13 +603,7 @@ func (s *Source) connectOnce(ctx context.Context) (*sinkBundle, <-chan error, er
 	}
 
 	sinks := &sinkBundle{hls: hlsSink, mse: mseSink, webrtc: webrtcSink}
-	bridge.attach([]sampleSink{hlsSink, mseSink}, []rtpSink{webrtcSink})
-
-	if _, err := client.Play(nil); err != nil {
-		sinks.Close()
-		client.Close()
-		return nil, nil, fmt.Errorf("play: %w", err)
-	}
+	bridge.setSinks([]sampleSink{hlsSink, mseSink}, []rtpSink{webrtcSink})
 
 	waitErrCh := make(chan error, 1)
 	go func() {
@@ -592,4 +615,27 @@ func (s *Source) connectOnce(ctx context.Context) (*sinkBundle, <-chan error, er
 	}()
 
 	return sinks, waitErrCh, nil
+}
+
+// waitForVideoParams polls bridge.hasVideoParams (populated by the priming
+// RTP callbacks already running via bridge.attach()) until it's true or
+// timeout elapses. Returns false on timeout or if ctx is cancelled first.
+func waitForVideoParams(ctx context.Context, bridge *rtspBridge, timeout time.Duration) bool {
+	if bridge.hasVideoParams() {
+		return true
+	}
+	deadline := time.Now().Add(timeout)
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return false
+		case <-ticker.C:
+			if bridge.hasVideoParams() {
+				return true
+			}
+		}
+	}
+	return false
 }
