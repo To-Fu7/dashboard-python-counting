@@ -171,10 +171,18 @@ export async function deployPortForwardConfig(): Promise<DeployResult> {
       return { deployed: false, error: `nginx -t validation failed, live config left untouched: ${errMessage(e)}` };
     }
 
-    // -f: this image's `cp` is BusyBox's (Alpine-based nginx image), which —
-    // unlike GNU cp — refuses to overwrite an existing regular file without
-    // it ("cp: can't create '...': File exists"), confirmed live.
-    await execAsync(`docker exec ${containerName} cp -f /etc/nginx/nginx.conf.candidate /etc/nginx/nginx.conf`, { timeout: 10000 });
+    // nginx.conf is commonly a bind-mounted file (confirmed live against
+    // env_services_nginx — mounted from /opt/services/nginx.conf on the
+    // host). `cp`/`docker cp` both try to unlink+recreate the destination
+    // inode, which fails on a bind mount even with -f ("File exists" from
+    // BusyBox cp; "device or resource busy" from `docker cp`, confirmed
+    // live testing both). Writing into the existing file via a shell
+    // redirect truncates-in-place instead, which works on a bind mount the
+    // same way `> file` always has.
+    await execAsync(
+      `docker exec -i ${containerName} sh -c 'cat > /etc/nginx/nginx.conf' < "${tmpFile}"`,
+      { timeout: 10000 }
+    );
     await execAsync(`docker exec ${containerName} rm -f /etc/nginx/nginx.conf.candidate`, { timeout: 5000 }).catch(() => {});
     await execAsync(`docker exec ${containerName} nginx -s reload`, { timeout: 10000 });
     return { deployed: true };
