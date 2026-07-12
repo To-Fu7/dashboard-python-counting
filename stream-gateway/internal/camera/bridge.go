@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"sync"
-	"sync/atomic"
 
 	"github.com/bluenviron/gortsplib/v5"
 	"github.com/bluenviron/gortsplib/v5/pkg/description"
@@ -75,9 +74,6 @@ type rtspBridge struct {
 	rtpSinks []rtpSink
 
 	sinkErrOnce sync.Once // logs only the first sink write error, not one per frame
-
-	debugAUCount     atomic.Int64 // TEMP: live-debugging real H265 camera HLS stall
-	debugRawPktCount atomic.Int64 // TEMP: counts raw RTP packets before decode
 }
 
 // logSinkErrorOnce surfaces the first sink Write* error to the log. These
@@ -324,19 +320,8 @@ func (b *rtspBridge) currentSinks() ([]sampleSink, []rtpSink) {
 // exactly once and only the sink slice they read is ever swapped.
 func (b *rtspBridge) attach() {
 	b.client.OnPacketRTP(b.videoMedia, b.videoForma, func(pkt *rtp.Packet) {
-		rawN := b.debugRawPktCount.Add(1)
-		if rawN <= 5 || rawN%100 == 0 {
-			log.Printf("DEBUG raw video RTP pkt #%d seq=%d payloadLen=%d marker=%v ts=%d", rawN, pkt.SequenceNumber, len(pkt.Payload), pkt.Marker, pkt.Timestamp)
-		}
-		if pkt.Marker {
-			log.Printf("DEBUG *** MARKER BIT SET *** pkt #%d seq=%d ts=%d", rawN, pkt.SequenceNumber, pkt.Timestamp)
-		}
-
 		au, err := b.videoDec.Decode(pkt)
 		if err != nil {
-			if rawN <= 5 || rawN%100 == 0 {
-				log.Printf("DEBUG raw video RTP pkt #%d decode error: %v", rawN, err)
-			}
 			return
 		}
 		b.updateParamsFromAU(au)
@@ -352,22 +337,6 @@ func (b *rtspBridge) attach() {
 		if !ok {
 			return
 		}
-		n := b.debugAUCount.Add(1)
-		if n <= 5 || n%50 == 0 {
-			types := make([]int, 0, len(au))
-			for _, nalu := range au {
-				if len(nalu) == 0 {
-					continue
-				}
-				if b.videoCodec == "h265" {
-					types = append(types, int((nalu[0]>>1)&0x3F))
-				} else {
-					types = append(types, int(nalu[0]&0x1F))
-				}
-			}
-			log.Printf("DEBUG video AU #%d pts=%d nalCount=%d nalTypes=%v sinks=%d", n, pts, len(au), types, len(sinks))
-		}
-
 		for _, sink := range sinks {
 			var err error
 			switch b.videoCodec {
@@ -375,9 +344,6 @@ func (b *rtspBridge) attach() {
 				err = sink.WriteH264(pts, au)
 			case "h265":
 				err = sink.WriteH265(pts, au)
-			}
-			if err != nil && (n <= 5 || n%50 == 0) {
-				log.Printf("DEBUG video AU #%d write error: %v", n, err)
 			}
 			b.logSinkErrorOnce(err)
 		}
