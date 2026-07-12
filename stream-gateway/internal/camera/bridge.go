@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"sync/atomic"
 
 	"github.com/bluenviron/gortsplib/v5"
 	"github.com/bluenviron/gortsplib/v5/pkg/description"
@@ -74,6 +75,8 @@ type rtspBridge struct {
 	rtpSinks []rtpSink
 
 	sinkErrOnce sync.Once // logs only the first sink write error, not one per frame
+
+	debugAUCount atomic.Int64 // TEMP: sanity-checking a real H264 camera
 }
 
 // logSinkErrorOnce surfaces the first sink Write* error to the log. These
@@ -337,6 +340,7 @@ func (b *rtspBridge) attach() {
 		if !ok {
 			return
 		}
+		n := b.debugAUCount.Add(1)
 		for _, sink := range sinks {
 			var err error
 			switch b.videoCodec {
@@ -344,6 +348,9 @@ func (b *rtspBridge) attach() {
 				err = sink.WriteH264(pts, au)
 			case "h265":
 				err = sink.WriteH265(pts, au)
+			}
+			if n <= 5 || n%50 == 0 {
+				log.Printf("DEBUG video AU #%d pts=%d nalCount=%d writeErr=%v", n, pts, len(au), err)
 			}
 			b.logSinkErrorOnce(err)
 		}
