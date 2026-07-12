@@ -2,6 +2,7 @@ package camera
 
 import (
 	"fmt"
+	"log"
 	"sync"
 
 	"github.com/bluenviron/gortsplib/v5"
@@ -71,6 +72,24 @@ type rtspBridge struct {
 	mu       sync.Mutex
 	sinks    []sampleSink
 	rtpSinks []rtpSink
+
+	sinkErrOnce sync.Once // logs only the first sink write error, not one per frame
+}
+
+// logSinkErrorOnce surfaces the first sink Write* error to the log. These
+// were previously discarded entirely — found live-testing against a real
+// camera that every single frame can fail to write (e.g. a malformed
+// parameter set) with zero visibility into why the camera never produces
+// any HLS/MSE output. Only the first is logged (not rate-limited further)
+// since a persistently-failing sink would otherwise flood the log at full
+// frame rate for as long as the connection stays up.
+func (b *rtspBridge) logSinkErrorOnce(err error) {
+	if err == nil {
+		return
+	}
+	b.sinkErrOnce.Do(func() {
+		log.Printf("sink write error (logged once, further errors on this connection are suppressed): %v", err)
+	})
 }
 
 func newRTSPBridge(client *gortsplib.Client, desc *description.Session, includeAudio bool) (*rtspBridge, error) {
@@ -319,12 +338,14 @@ func (b *rtspBridge) attach() {
 			return
 		}
 		for _, sink := range sinks {
+			var err error
 			switch b.videoCodec {
 			case "h264":
-				_ = sink.WriteH264(pts, au)
+				err = sink.WriteH264(pts, au)
 			case "h265":
-				_ = sink.WriteH265(pts, au)
+				err = sink.WriteH265(pts, au)
 			}
+			b.logSinkErrorOnce(err)
 		}
 	})
 
@@ -347,12 +368,14 @@ func (b *rtspBridge) attach() {
 				return
 			}
 			for _, sink := range sinks {
+				var err error
 				switch b.audioCodec {
 				case "mpeg4audio":
-					_ = sink.WriteMPEG4Audio(pts, samples)
+					err = sink.WriteMPEG4Audio(pts, samples)
 				case "opus":
-					_ = sink.WriteOpus(pts, samples)
+					err = sink.WriteOpus(pts, samples)
 				}
+				b.logSinkErrorOnce(err)
 			}
 		})
 	}
