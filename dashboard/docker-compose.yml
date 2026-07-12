@@ -18,12 +18,14 @@ services:
     runtime: nvidia
     volumes:
       - ../python-counting:/python-counting
+      - ../stream-gateway:/stream-gateway:ro
       - /var/run/docker.sock:/var/run/docker.sock
       - dashboard-data:/app/data
       - /usr/bin/nvidia-smi:/usr/bin/nvidia-smi:ro
     environment:
       - PYTHON_COUNTING_DIR=/python-counting
       - HOST_PYTHON_COUNTING_DIR=${HOST_PYTHON_COUNTING_DIR}
+      - STREAM_GATEWAY_DIR=/stream-gateway
       - SETTINGS_FILE=/app/data/settings.json
       # - NODERED_URL=http://nodered:1880
       - NVIDIA_VISIBLE_DEVICES=all

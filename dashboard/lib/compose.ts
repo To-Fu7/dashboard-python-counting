@@ -14,6 +14,16 @@ const PYTHON_COUNTING_DIR = process.env.PYTHON_COUNTING_DIR || path.join(process
 const HOST_PYTHON_COUNTING_DIR = process.env.HOST_PYTHON_COUNTING_DIR || PYTHON_COUNTING_DIR;
 const COMPOSE_FILE = path.join(PYTHON_COUNTING_DIR, 'docker-compose.yml');
 
+// stream-gateway/ is a sibling Go module (not part of python-counting), built
+// via a plain `docker build` (like the camera image itself — see
+// composeBuild()) rather than compose's own `build:` directive, so no new
+// host/container path-resolution edge case is introduced beyond the
+// PYTHON_COUNTING_DIR one above. STREAM_GATEWAY_DIR must be bind-mounted
+// into the dashboard container (dashboard/docker-compose.yml) the same way
+// PYTHON_COUNTING_DIR already is, for `docker build`'s client-side context
+// upload to see the source.
+const STREAM_GATEWAY_DIR = process.env.STREAM_GATEWAY_DIR || path.join(process.cwd(), '..', 'stream-gateway');
+
 interface ComposeService {
   image?: string;
   container_name?: string;
@@ -38,6 +48,11 @@ export const TRITON_SERVICE_NAME = 'triton';
 export const TRITON_BUILDER_SERVICE_NAME = 'triton-model-builder';
 export const TRITON_CONTAINER_NAME = 'triton-inference-server';
 export const DEFAULT_TRITON_IMAGE_TAG = '24.08';
+
+export const STREAM_GATEWAY_SERVICE_NAME = 'stream-gateway';
+export const STREAM_GATEWAY_CONTAINER_NAME = 'stream-gateway';
+export const STREAM_GATEWAY_MEDIA_PORT = 8555;
+export const STREAM_GATEWAY_WEBRTC_UDP_PORT = 8189;
 
 interface ComposeFile {
   services: Record<string, ComposeService>;
@@ -180,13 +195,46 @@ function ensureTritonServices(compose: ComposeFile, hardwareMode: HardwareMode, 
   compose.networks = { ...(compose.networks || {}), ...ENVISIONS_NETWORK };
 }
 
-export function addService(deviceCode: string, hardwareMode: HardwareMode = 'jetson', tritonImageTag?: string): void {
+// stream-gateway is CPU/network-only (no GPU work involved in RTSP ingest or
+// HLS/MSE/WebRTC muxing), so unlike Triton it needs no hardware-mode
+// branching — one service definition for every deployment.
+export function buildStreamGatewayServiceDefinition(publicBaseUrl?: string): ComposeService {
+  return {
+    image: 'stream-gateway:latest',
+    container_name: STREAM_GATEWAY_CONTAINER_NAME,
+    restart: 'unless-stopped',
+    ports: [
+      `${STREAM_GATEWAY_MEDIA_PORT}:${STREAM_GATEWAY_MEDIA_PORT}`,
+      `${STREAM_GATEWAY_WEBRTC_UDP_PORT}:${STREAM_GATEWAY_WEBRTC_UDP_PORT}/udp`,
+    ],
+    networks: ['envisions'],
+    environment: [
+      `LISTEN_ADDR=:${STREAM_GATEWAY_MEDIA_PORT}`,
+      `PUBLIC_BASE_URL=${publicBaseUrl || `http://localhost:${STREAM_GATEWAY_MEDIA_PORT}`}`,
+      `WEBRTC_UDP_MUX_PORT=${STREAM_GATEWAY_WEBRTC_UDP_PORT}`,
+    ],
+  };
+}
+
+function ensureStreamGatewayService(compose: ComposeFile, publicBaseUrl?: string): void {
+  compose.services = compose.services || {};
+  compose.services[STREAM_GATEWAY_SERVICE_NAME] = buildStreamGatewayServiceDefinition(publicBaseUrl);
+  compose.networks = { ...(compose.networks || {}), ...ENVISIONS_NETWORK };
+}
+
+export function addService(
+  deviceCode: string,
+  hardwareMode: HardwareMode = 'jetson',
+  tritonImageTag?: string,
+  streamGatewayPublicBaseUrl?: string
+): void {
   const compose = readCompose();
   const serviceName = getServiceName(deviceCode);
 
   compose.services = compose.services || {};
   compose.services[serviceName] = buildServiceDefinition(deviceCode, hardwareMode);
   ensureTritonServices(compose, hardwareMode, tritonImageTag);
+  ensureStreamGatewayService(compose, streamGatewayPublicBaseUrl);
 
   if (!compose.networks) {
     compose.networks = { ...ENVISIONS_NETWORK };
@@ -195,7 +243,11 @@ export function addService(deviceCode: string, hardwareMode: HardwareMode = 'jet
   writeCompose(compose);
 }
 
-export function applyHardwareModeToAll(hardwareMode: HardwareMode, tritonImageTag?: string): void {
+export function applyHardwareModeToAll(
+  hardwareMode: HardwareMode,
+  tritonImageTag?: string,
+  streamGatewayPublicBaseUrl?: string
+): void {
   const compose = readCompose();
   if (!compose.services) return;
 
@@ -207,6 +259,7 @@ export function applyHardwareModeToAll(hardwareMode: HardwareMode, tritonImageTa
     compose.services[serviceName] = buildServiceDefinition(deviceCode, hardwareMode);
   }
   ensureTritonServices(compose, hardwareMode, tritonImageTag);
+  ensureStreamGatewayService(compose, streamGatewayPublicBaseUrl);
 
   writeCompose(compose);
 }
@@ -318,4 +371,38 @@ export async function imageExists(imageName: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+// stream-gateway has no prebuilt image to pull (unlike Triton) — it's built
+// locally from source, same as the camera image via composeBuild(), using
+// STREAM_GATEWAY_DIR (bind-mounted into the dashboard container the same
+// way PYTHON_COUNTING_DIR is — see dashboard/docker-compose.yml) as
+// `docker build`'s context.
+export async function composeBuildStreamGateway(): Promise<{ stdout: string; stderr: string }> {
+  return execAsync(
+    `docker build -t stream-gateway:latest -f Dockerfile .`,
+    { cwd: STREAM_GATEWAY_DIR, timeout: 600000 }
+  );
+}
+
+export async function composeUpStreamGateway(): Promise<void> {
+  const { stderr } = await execAsync(
+    `${COMPOSE_CMD} up -d --no-deps ${STREAM_GATEWAY_SERVICE_NAME}`,
+    { cwd: PYTHON_COUNTING_DIR, timeout: 60000 }
+  );
+  if (stderr && /error/i.test(stderr) && !/pulling|creating|starting|created|started/i.test(stderr)) {
+    throw new Error(stderr.trim());
+  }
+}
+
+export async function composeStopStreamGateway(): Promise<void> {
+  await execAsync(
+    `${COMPOSE_CMD} stop ${STREAM_GATEWAY_SERVICE_NAME}`,
+    { cwd: PYTHON_COUNTING_DIR, timeout: 60000 }
+  );
+}
+
+export async function composeRestartStreamGateway(): Promise<void> {
+  await composeStopStreamGateway();
+  await composeUpStreamGateway();
 }

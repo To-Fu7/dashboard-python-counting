@@ -4,6 +4,7 @@ import { readDeviceEnv, writeDeviceEnv, listEnvFiles } from '@/lib/env-parser';
 import { getAllContainerStatuses } from '@/lib/docker';
 import { getContainerName } from '@/lib/compose';
 import { readSettings } from '@/lib/settings';
+import { upsertCameraStream } from '@/lib/stream-gateway';
 import { v4 as uuidv4 } from 'uuid';
 
 export async function GET() {
@@ -140,7 +141,16 @@ export async function POST(request: Request) {
       lineA: '[(100, 300), (700, 300)]',
     });
 
-    addService(deviceCode, settings.hardwareMode, settings.triton.imageTag);
+    addService(deviceCode, settings.hardwareMode, settings.triton.imageTag, settings.streamGateway.publicBaseUrl);
+
+    // Best-effort: stream-gateway may not be up yet, and a camera can be
+    // added with no RTSP URL set yet — neither should fail device creation.
+    // The device's own Stream tab (Phase 4) can re-trigger this on save.
+    if (rtspUrl) {
+      upsertCameraStream(deviceCode, { rtspUrl, onDemand: true, includeAudio: false }).catch(err => {
+        console.warn(`stream-gateway registration failed for ${deviceCode}:`, err);
+      });
+    }
 
     return NextResponse.json({ success: true, deviceCode, deviceId }, { status: 201 });
   } catch (e) {

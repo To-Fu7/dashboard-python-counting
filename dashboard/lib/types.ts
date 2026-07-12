@@ -47,6 +47,9 @@ export interface DeviceEnvConfig {
   MQTT_APD_TOPIC?: string;
   MQTT_FIRESMOKE_TOPIC?: string;
   MQTT_FACE_TOPIC?: string;
+  STREAM_GATEWAY_ALWAYS_ON?: string;  // 'true' = stream-gateway connects to this camera immediately and stays connected regardless of viewers; 'false'/unset = on-demand (connects on first viewer, disconnects after an idle grace period)
+  STREAM_GATEWAY_AUDIO?: string;      // 'true' = pass the camera's audio track through to MSE/HLS/WebRTC (AAC/Opus sources only for MSE/HLS; WebRTC additionally needs Opus specifically — see stream-gateway's own docs)
+  SUBSTREAM_URL?: string;             // optional lower-resolution RTSP URL (e.g. Hikvision Channel 102) — manual field only, registered as its own independent stream-gateway camera ("<code>_sub"), no automatic grid-vs-fullscreen switching
   JPEG_QUALITY: string;
   FPS_LIMIT: string;
   FRAME_SKIP: string;
@@ -109,10 +112,22 @@ export interface TritonSettings {
   faceEmbedModel: string; // ArcFace model repo name used to embed enrollment photos (must match cameras' FACE_EMBED_MODEL)
 }
 
+export interface StreamGatewaySettings {
+  // Browser-resolvable LAN host[:port] stream-gateway is reachable at (e.g.
+  // 'http://192.168.1.50:8555') — distinct from the container-internal
+  // address the dashboard itself uses to reach it (STREAM_GATEWAY_URL env,
+  // resolved by container name over the envisions network). Needed because
+  // the URLs returned by "Expose CCTV URL" must work from a browser on the
+  // LAN, which can't resolve Docker container names. Empty until set once
+  // per deployment — there's no way to auto-detect the right LAN IP.
+  publicBaseUrl: string;
+}
+
 export interface GlobalSettings {
   appName: string;
   hardwareMode: HardwareMode;
   triton: TritonSettings;
+  streamGateway: StreamGatewaySettings;
   pg: {
     host: string;
     port: string;
@@ -159,6 +174,9 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
     imageTag: '24.08',
     defaultModel: 'yolo26m_640',
     faceEmbedModel: '',
+  },
+  streamGateway: {
+    publicBaseUrl: '',
   },
   pg: {
     host: 'host.docker.internal',
