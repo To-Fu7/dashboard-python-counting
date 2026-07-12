@@ -171,7 +171,10 @@ export async function deployPortForwardConfig(): Promise<DeployResult> {
       return { deployed: false, error: `nginx -t validation failed, live config left untouched: ${errMessage(e)}` };
     }
 
-    await execAsync(`docker exec ${containerName} cp /etc/nginx/nginx.conf.candidate /etc/nginx/nginx.conf`, { timeout: 10000 });
+    // -f: this image's `cp` is BusyBox's (Alpine-based nginx image), which —
+    // unlike GNU cp — refuses to overwrite an existing regular file without
+    // it ("cp: can't create '...': File exists"), confirmed live.
+    await execAsync(`docker exec ${containerName} cp -f /etc/nginx/nginx.conf.candidate /etc/nginx/nginx.conf`, { timeout: 10000 });
     await execAsync(`docker exec ${containerName} rm -f /etc/nginx/nginx.conf.candidate`, { timeout: 5000 }).catch(() => {});
     await execAsync(`docker exec ${containerName} nginx -s reload`, { timeout: 10000 });
     return { deployed: true };
