@@ -76,7 +76,8 @@ type rtspBridge struct {
 
 	sinkErrOnce sync.Once // logs only the first sink write error, not one per frame
 
-	debugAUCount atomic.Int64 // TEMP: sanity-checking a real H264 camera
+	debugAUCount     atomic.Int64 // TEMP: sanity-checking a real H264 camera
+	debugRawPktCount atomic.Int64 // TEMP: sanity-checking a real H264 camera
 }
 
 // logSinkErrorOnce surfaces the first sink Write* error to the log. These
@@ -323,8 +324,15 @@ func (b *rtspBridge) currentSinks() ([]sampleSink, []rtpSink) {
 // exactly once and only the sink slice they read is ever swapped.
 func (b *rtspBridge) attach() {
 	b.client.OnPacketRTP(b.videoMedia, b.videoForma, func(pkt *rtp.Packet) {
+		rawN := b.debugRawPktCount.Add(1)
+		if rawN <= 5 || rawN%100 == 0 {
+			log.Printf("DEBUG raw video RTP pkt #%d seq=%d payloadLen=%d marker=%v", rawN, pkt.SequenceNumber, len(pkt.Payload), pkt.Marker)
+		}
 		au, err := b.videoDec.Decode(pkt)
 		if err != nil {
+			if rawN <= 5 || rawN%100 == 0 {
+				log.Printf("DEBUG raw video RTP pkt #%d decode error: %v", rawN, err)
+			}
 			return
 		}
 		b.updateParamsFromAU(au)
