@@ -9,6 +9,7 @@ package media
 
 import (
 	"net/http"
+	"time"
 
 	"stream-gateway/internal/camera"
 	"stream-gateway/internal/webrtc"
@@ -46,6 +47,31 @@ func handleHLS(mgr *camera.Manager) http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
 			return
 		}
+
+		// gohlslib's own Handle can legitimately block for a while on the
+		// very first request for a camera (waiting for enough data to
+		// produce the master playlist) — found live-testing against a real
+		// camera whose first segment took long enough that the idle
+		// reaper's "no request seen recently" check (TouchHLS only
+		// timestamps at request *start*) misread a single still-in-flight
+		// request as "no viewers" and tore the connection down underneath
+		// it. Keep re-touching every few seconds for as long as this
+		// specific request is still being handled.
+		done := make(chan struct{})
+		defer close(done)
+		go func() {
+			ticker := time.NewTicker(5 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-done:
+					return
+				case <-ticker.C:
+					_ = src.TouchHLS()
+				}
+			}
+		}()
+
 		handler(w, r)
 	}
 }
