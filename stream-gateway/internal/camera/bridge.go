@@ -326,7 +326,10 @@ func (b *rtspBridge) attach() {
 	b.client.OnPacketRTP(b.videoMedia, b.videoForma, func(pkt *rtp.Packet) {
 		rawN := b.debugRawPktCount.Add(1)
 		if rawN <= 5 || rawN%100 == 0 {
-			log.Printf("DEBUG raw video RTP pkt #%d seq=%d payloadLen=%d", rawN, pkt.SequenceNumber, len(pkt.Payload))
+			log.Printf("DEBUG raw video RTP pkt #%d seq=%d payloadLen=%d marker=%v ts=%d", rawN, pkt.SequenceNumber, len(pkt.Payload), pkt.Marker, pkt.Timestamp)
+		}
+		if pkt.Marker {
+			log.Printf("DEBUG *** MARKER BIT SET *** pkt #%d seq=%d ts=%d", rawN, pkt.SequenceNumber, pkt.Timestamp)
 		}
 
 		au, err := b.videoDec.Decode(pkt)
