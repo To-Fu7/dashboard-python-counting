@@ -346,6 +346,7 @@ func (b *rtspBridge) attach() {
 			return
 		}
 		pts, ok := b.client.PacketPTS(b.videoMedia, pkt)
+		log.Printf("DEBUG raw video RTP pkt #%d PacketPTS ok=%v pts=%d", rawN, ok, pts)
 		if !ok {
 			return
 		}
