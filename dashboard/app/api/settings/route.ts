@@ -15,7 +15,23 @@ export async function PUT(request: Request) {
   try {
     const prev = readSettings();
     const body = await request.json();
-    writeSettings(body);
+
+    // Merge, don't replace — a caller sending a partial body (e.g. just
+    // { streamGateway: { publicBaseUrl } }) must not blow away every other
+    // section (pg/mqtt credentials, hardwareMode, ...). Nested nully nested
+    // objects merge shallowly per-section, matching how each section is a
+    // flat bag of fields with no further nesting.
+    const merged = {
+      ...prev,
+      ...body,
+      triton: { ...prev.triton, ...body.triton },
+      streamGateway: { ...prev.streamGateway, ...body.streamGateway },
+      pg: { ...prev.pg, ...body.pg },
+      mqtt: { ...prev.mqtt, ...body.mqtt },
+      defaults: { ...prev.defaults, ...body.defaults },
+    };
+    writeSettings(merged);
+
     const modeChanged = body.hardwareMode && body.hardwareMode !== prev.hardwareMode;
     const tritonTagChanged = body.triton?.imageTag && body.triton.imageTag !== prev.triton.imageTag;
     const streamGatewayUrlChanged = body.streamGateway?.publicBaseUrl !== undefined
