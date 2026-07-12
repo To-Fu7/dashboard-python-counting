@@ -529,11 +529,14 @@ func (s *Source) connectOnce(ctx context.Context) (*sinkBundle, <-chan error, er
 		return nil, nil, fmt.Errorf("invalid RTSP URL: %w", err)
 	}
 
-	protoTCP := gortsplib.ProtocolTCP
+	// TEMP DIAGNOSTIC: forcing UDP instead of TCP-interleaved to test the
+	// hypothesis that this camera's TCP-interleaved data channel silently
+	// delivers zero RTP packets despite SETUP/PLAY succeeding.
+	protoUDP := gortsplib.ProtocolUDP
 	client := &gortsplib.Client{
 		Scheme:   u.Scheme,
 		Host:     u.Host,
-		Protocol: &protoTCP,
+		Protocol: &protoUDP,
 	}
 
 	if err := client.Start(); err != nil {
