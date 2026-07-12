@@ -30,13 +30,19 @@ export async function PUT(
       return NextResponse.json({ error: 'Device not found' }, { status: 404 });
     }
 
-    writeDeviceEnv(code, body);
+    // Merge, don't replace — a partial body (any field left out) must not
+    // wipe the rest back to writeDeviceEnv's hardcoded defaults. The real
+    // device edit page always sends the full env object it loaded via GET,
+    // so this was never reachable through normal use, but it's the correct
+    // way to implement PUT regardless (same class of bug just fixed in
+    // /api/settings).
+    const merged = { ...existing, ...body };
+    writeDeviceEnv(code, merged);
 
     // Best-effort: re-push this device's stream config to stream-gateway on
     // every save, same "regenerate from current state" posture as the
     // compose-service regeneration elsewhere in this file. Not blocking —
     // stream-gateway being down shouldn't fail a settings save.
-    const merged = { ...existing, ...body };
     if (merged.RTSP_URL) {
       upsertCameraStream(code, {
         rtspUrl: merged.RTSP_URL,
