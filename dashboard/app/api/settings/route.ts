@@ -18,9 +18,15 @@ export async function PUT(request: Request) {
     writeSettings(body);
     const modeChanged = body.hardwareMode && body.hardwareMode !== prev.hardwareMode;
     const tritonTagChanged = body.triton?.imageTag && body.triton.imageTag !== prev.triton.imageTag;
-    if (modeChanged || tritonTagChanged) {
-      // regenerates every camera service AND the triton/model-builder services
-      applyHardwareModeToAll(body.hardwareMode ?? prev.hardwareMode, body.triton?.imageTag);
+    const streamGatewayUrlChanged = body.streamGateway?.publicBaseUrl !== undefined
+      && body.streamGateway.publicBaseUrl !== prev.streamGateway.publicBaseUrl;
+    if (modeChanged || tritonTagChanged || streamGatewayUrlChanged) {
+      // regenerates every camera service AND the triton/model-builder/stream-gateway services
+      applyHardwareModeToAll(
+        body.hardwareMode ?? prev.hardwareMode,
+        body.triton?.imageTag,
+        body.streamGateway?.publicBaseUrl ?? prev.streamGateway.publicBaseUrl
+      );
     }
     return NextResponse.json({
       success: true,
