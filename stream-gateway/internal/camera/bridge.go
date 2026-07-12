@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"sync"
-	"sync/atomic"
 
 	"github.com/bluenviron/gortsplib/v5"
 	"github.com/bluenviron/gortsplib/v5/pkg/description"
@@ -70,14 +69,43 @@ type rtspBridge struct {
 	mpeg4Forma *format.MPEG4Audio
 	opusForma  *format.Opus
 
+	videoPTS ptsUnwrapper
+	audioPTS ptsUnwrapper
+
 	mu       sync.Mutex
 	sinks    []sampleSink
 	rtpSinks []rtpSink
 
 	sinkErrOnce sync.Once // logs only the first sink write error, not one per frame
+}
 
-	debugAUCount     atomic.Int64 // TEMP: sanity-checking a real H264 camera
-	debugRawPktCount atomic.Int64 // TEMP: sanity-checking a real H264 camera
+// ptsUnwrapper converts a 32-bit wrapping RTP timestamp into a monotonically
+// increasing int64 PTS (in the track's own clock-rate units), independently
+// per track. Replaces gortsplib's Client.PacketPTS, which — traced to
+// rtptime.GlobalDecoder returning ok=false whenever the format resolved via
+// its internal cm.formats[pkt.PayloadType] lookup reports ClockRate()==0 —
+// returned ok=false for every single packet live-tested against two
+// different real cameras (one H264, one H265), silently dropping 100% of
+// frames before they ever reached a sink despite decoding correctly. This is
+// the same delta-unwrap technique gortsplib's own decoder uses internally,
+// just without that failure mode and without needing cross-track sync (each
+// sink's muxer only needs a self-consistent, monotonic per-track timeline,
+// not audio/video aligned to a shared wall clock).
+type ptsUnwrapper struct {
+	initialized bool
+	prev        uint32
+	overall     int64
+}
+
+func (u *ptsUnwrapper) decode(ts uint32) int64 {
+	if !u.initialized {
+		u.initialized = true
+		u.prev = ts
+		return 0
+	}
+	u.overall += int64(int32(ts - u.prev))
+	u.prev = ts
+	return u.overall
 }
 
 // logSinkErrorOnce surfaces the first sink Write* error to the log. These
@@ -324,33 +352,20 @@ func (b *rtspBridge) currentSinks() ([]sampleSink, []rtpSink) {
 // exactly once and only the sink slice they read is ever swapped.
 func (b *rtspBridge) attach() {
 	b.client.OnPacketRTP(b.videoMedia, b.videoForma, func(pkt *rtp.Packet) {
-		rawN := b.debugRawPktCount.Add(1)
-		if rawN <= 5 || rawN%100 == 0 {
-			log.Printf("DEBUG raw video RTP pkt #%d seq=%d payloadLen=%d marker=%v", rawN, pkt.SequenceNumber, len(pkt.Payload), pkt.Marker)
-		}
 		au, err := b.videoDec.Decode(pkt)
 		if err != nil {
-			if rawN <= 5 || rawN%100 == 0 {
-				log.Printf("DEBUG raw video RTP pkt #%d decode error: %v", rawN, err)
-			}
 			return
 		}
 		b.updateParamsFromAU(au)
 
 		sinks, rtpSinks := b.currentSinks()
-		log.Printf("DEBUG raw video RTP pkt #%d decoded OK, nalCount=%d sinks=%d rtpSinks=%d", rawN, len(au), len(sinks), len(rtpSinks))
 		for _, rs := range rtpSinks {
 			rs.WriteVideoRTP(pkt)
 		}
 		if len(sinks) == 0 {
 			return
 		}
-		pts, ok := b.client.PacketPTS(b.videoMedia, pkt)
-		log.Printf("DEBUG raw video RTP pkt #%d PacketPTS ok=%v pts=%d", rawN, ok, pts)
-		if !ok {
-			return
-		}
-		n := b.debugAUCount.Add(1)
+		pts := b.videoPTS.decode(pkt.Timestamp)
 		for _, sink := range sinks {
 			var err error
 			switch b.videoCodec {
@@ -358,9 +373,6 @@ func (b *rtspBridge) attach() {
 				err = sink.WriteH264(pts, au)
 			case "h265":
 				err = sink.WriteH265(pts, au)
-			}
-			if n <= 5 || n%50 == 0 {
-				log.Printf("DEBUG video AU #%d pts=%d nalCount=%d writeErr=%v", n, pts, len(au), err)
 			}
 			b.logSinkErrorOnce(err)
 		}
@@ -376,14 +388,11 @@ func (b *rtspBridge) attach() {
 				return
 			}
 
-			pts, ok := b.client.PacketPTS(b.audioMedia, pkt)
-			if !ok {
-				return
-			}
 			samples, err := b.audioDec.Decode(pkt)
 			if err != nil {
 				return
 			}
+			pts := b.audioPTS.decode(pkt.Timestamp)
 			for _, sink := range sinks {
 				var err error
 				switch b.audioCodec {
