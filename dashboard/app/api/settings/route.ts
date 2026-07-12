@@ -26,6 +26,7 @@ export async function PUT(request: Request) {
       ...body,
       triton: { ...prev.triton, ...body.triton },
       streamGateway: { ...prev.streamGateway, ...body.streamGateway },
+      portForward: { ...prev.portForward, ...body.portForward },
       pg: { ...prev.pg, ...body.pg },
       mqtt: { ...prev.mqtt, ...body.mqtt },
       defaults: { ...prev.defaults, ...body.defaults },

@@ -24,6 +24,7 @@ export function readSettings(): GlobalSettings {
       hardwareMode: parsed.hardwareMode ?? DEFAULT_SETTINGS.hardwareMode,
       triton: { ...DEFAULT_SETTINGS.triton, ...parsed.triton },
       streamGateway: { ...DEFAULT_SETTINGS.streamGateway, ...parsed.streamGateway },
+      portForward: { ...DEFAULT_SETTINGS.portForward, ...parsed.portForward },
       pg: { ...DEFAULT_SETTINGS.pg, ...parsed.pg },
       mqtt: { ...DEFAULT_SETTINGS.mqtt, ...parsed.mqtt },
       defaults: { ...DEFAULT_SETTINGS.defaults, ...parsed.defaults },

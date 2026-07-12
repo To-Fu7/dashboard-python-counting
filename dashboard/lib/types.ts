@@ -50,6 +50,10 @@ export interface DeviceEnvConfig {
   STREAM_GATEWAY_ALWAYS_ON?: string;  // 'true' = stream-gateway connects to this camera immediately and stays connected regardless of viewers; 'false'/unset = on-demand (connects on first viewer, disconnects after an idle grace period)
   STREAM_GATEWAY_AUDIO?: string;      // 'true' = pass the camera's audio track through to MSE/HLS/WebRTC (AAC/Opus sources only for MSE/HLS; WebRTC additionally needs Opus specifically — see stream-gateway's own docs)
   SUBSTREAM_URL?: string;             // optional lower-resolution RTSP URL (e.g. Hikvision Channel 102) — manual field only, registered as its own independent stream-gateway camera ("<code>_sub"), no automatic grid-vs-fullscreen switching
+  PORTFWD_ENABLED?: string;      // 'true' = raw TCP port-forward this device's camera through the existing nginx container's stream{} block
+  PORTFWD_SRC_IP?: string;       // camera IP to forward to (defaults to the host part of RTSP_URL)
+  PORTFWD_SRC_PORT?: string;     // camera port to forward to (default '554')
+  PORTFWD_LISTEN_PORT?: string;  // port nginx listens on for this forward
   JPEG_QUALITY: string;
   FPS_LIMIT: string;
   FRAME_SKIP: string;
@@ -123,11 +127,19 @@ export interface StreamGatewaySettings {
   publicBaseUrl: string;
 }
 
+export interface PortForwardSettings {
+  // Name of the EXISTING nginx Docker container to manage (not created by
+  // this dashboard) — e.g. 'env_services_nginx'. Empty until set once per
+  // deployment.
+  nginxContainerName: string;
+}
+
 export interface GlobalSettings {
   appName: string;
   hardwareMode: HardwareMode;
   triton: TritonSettings;
   streamGateway: StreamGatewaySettings;
+  portForward: PortForwardSettings;
   pg: {
     host: string;
     port: string;
@@ -177,6 +189,9 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
   },
   streamGateway: {
     publicBaseUrl: '',
+  },
+  portForward: {
+    nginxContainerName: '',
   },
   pg: {
     host: 'host.docker.internal',

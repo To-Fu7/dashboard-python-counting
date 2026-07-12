@@ -305,6 +305,7 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
         <TabsList>
           <TabsTrigger value="basic">Basic Settings</TabsTrigger>
           <TabsTrigger value="lines">Line Configuration</TabsTrigger>
+          <TabsTrigger value="stream">Stream</TabsTrigger>
           <TabsTrigger value="logs">Logs</TabsTrigger>
         </TabsList>
 
@@ -324,7 +325,7 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
             </div>
           </Section>
 
-          <Section title="Stream">
+          <Section title="Camera Source">
             <FormField label="RTSP URL">
               <Input value={env.RTSP_URL || ''} onChange={e => setField('RTSP_URL', e.target.value)} placeholder="rtsp://..." />
             </FormField>
@@ -684,6 +685,17 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
           </div>
         </TabsContent>
 
+        {/* ── STREAM (MSE/HLS/WebRTC + Port Forward) ── */}
+        <TabsContent value="stream" className="space-y-6 pt-4">
+          <StreamSettingsTab code={code} env={env} setField={setField} />
+
+          <div className="flex justify-end">
+            <Button onClick={handleSave} disabled={saving}>
+              {saving ? 'Saving...' : 'Save Settings'}
+            </Button>
+          </div>
+        </TabsContent>
+
         {/* ── LOGS ── */}
         <TabsContent value="logs" className="pt-4 space-y-4">
           {status === 'running' && (
@@ -745,6 +757,199 @@ function FormField({ label, hint, children }: { label: string; hint?: string; ch
       <Label>{label}</Label>
       {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
       {children}
+    </div>
+  );
+}
+
+interface StreamUrlSet { hls: string; mse: string; webrtc: string }
+
+function StreamSettingsTab({
+  code, env, setField,
+}: {
+  code: string;
+  env: Partial<DeviceEnvConfig>;
+  setField: (key: string, value: string) => void;
+}) {
+  const [urls, setUrls] = useState<{ main: StreamUrlSet; sub: StreamUrlSet | null } | null>(null);
+  const [urlsLoading, setUrlsLoading] = useState(false);
+  const [portCheck, setPortCheck] = useState<{ available: boolean; conflict: string | null } | null>(null);
+  const [portChecking, setPortChecking] = useState(false);
+
+  async function exposeUrls() {
+    setUrlsLoading(true);
+    try {
+      const res = await fetch(`/api/devices/${code}/stream-urls`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setUrls(data);
+    } catch (e) {
+      toast.error(`Failed to fetch stream URLs: ${e}`);
+    } finally {
+      setUrlsLoading(false);
+    }
+  }
+
+  async function copy(value: string) {
+    await navigator.clipboard.writeText(value);
+    toast.success('Copied');
+  }
+
+  async function checkPort() {
+    const port = env.PORTFWD_LISTEN_PORT;
+    if (!port) { toast.error('Enter a listen port first'); return; }
+    setPortChecking(true);
+    try {
+      const res = await fetch(`/api/devices/${code}/port-check?port=${encodeURIComponent(port)}`);
+      const data = await res.json();
+      setPortCheck(data);
+    } catch (e) {
+      toast.error(`Check failed: ${e}`);
+    } finally {
+      setPortChecking(false);
+    }
+  }
+
+  function suggestPort() {
+    // Client-side starting point only (past the 4 pre-existing hand-written
+    // forwards observed live at 5542-5545) — "Check availability" confirms
+    // it server-side against the real registry.
+    setField('PORTFWD_LISTEN_PORT', String(5546 + Math.floor(Math.random() * 50)));
+    setPortCheck(null);
+  }
+
+  return (
+    <>
+      <Section title="Live Stream Server">
+        <div className="grid grid-cols-2 gap-4">
+          <FormField label="Connection Mode">
+            <div className="flex items-center gap-2 pt-2">
+              <Switch
+                checked={env.STREAM_GATEWAY_ALWAYS_ON === 'true'}
+                onCheckedChange={v => setField('STREAM_GATEWAY_ALWAYS_ON', v ? 'true' : 'false')}
+              />
+              <span className="text-sm text-muted-foreground">
+                {env.STREAM_GATEWAY_ALWAYS_ON === 'true'
+                  ? 'Always-on — connects immediately, reconnects automatically'
+                  : 'On-demand — connects on first viewer, disconnects after an idle period'}
+              </span>
+            </div>
+          </FormField>
+          <FormField label="Include Audio">
+            <div className="flex items-center gap-2 pt-2">
+              <Switch
+                checked={env.STREAM_GATEWAY_AUDIO === 'true'}
+                onCheckedChange={v => setField('STREAM_GATEWAY_AUDIO', v ? 'true' : 'false')}
+              />
+              <span className="text-sm text-muted-foreground">
+                {env.STREAM_GATEWAY_AUDIO === 'true' ? 'Enabled' : 'Disabled'}
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              AAC/Opus sources only for HLS/MSE playback; WebRTC additionally needs Opus specifically.
+              G.711 (PCM μ-law/A-law) cameras have no audio path on HLS/MSE and get no audio anywhere
+              with this switch on.
+            </p>
+          </FormField>
+          <div className="col-span-2">
+            <FormField label="Substream URL (optional)">
+              <Input
+                value={env.SUBSTREAM_URL || ''}
+                onChange={e => setField('SUBSTREAM_URL', e.target.value)}
+                placeholder="rtsp://... (e.g. Hikvision Channel 102, lower resolution)"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Manual field only — registered as an independent stream (&quot;{code}_sub&quot;). No
+                automatic switching between main/substream in the grid or fullscreen views.
+              </p>
+            </FormField>
+          </div>
+        </div>
+      </Section>
+
+      <Section title="Live Stream URLs">
+        <Button type="button" variant="outline" size="sm" onClick={exposeUrls} disabled={urlsLoading}>
+          {urlsLoading ? 'Loading...' : 'Expose CCTV URL'}
+        </Button>
+        {urls && (
+          <div className="space-y-3 pt-2">
+            <StreamUrlRow label="HLS" value={urls.main.hls} onCopy={copy} />
+            <StreamUrlRow label="MSE" value={urls.main.mse} onCopy={copy} />
+            <StreamUrlRow label="WebRTC" value={urls.main.webrtc} onCopy={copy} />
+            {urls.sub && (
+              <>
+                <p className="text-xs text-muted-foreground pt-1">Substream</p>
+                <StreamUrlRow label="HLS" value={urls.sub.hls} onCopy={copy} />
+                <StreamUrlRow label="MSE" value={urls.sub.mse} onCopy={copy} />
+                <StreamUrlRow label="WebRTC" value={urls.sub.webrtc} onCopy={copy} />
+              </>
+            )}
+          </div>
+        )}
+      </Section>
+
+      <Section title="Port Forward">
+        <div className="space-y-3 rounded-md border border-border p-3">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium">Raw TCP Port Forward (RTSP passthrough)</span>
+            <Switch
+              checked={env.PORTFWD_ENABLED === 'true'}
+              onCheckedChange={v => setField('PORTFWD_ENABLED', v ? 'true' : 'false')}
+            />
+          </div>
+          {env.PORTFWD_ENABLED === 'true' && (
+            <div className="grid grid-cols-3 gap-4">
+              <FormField label="Forward IP">
+                <Input
+                  value={env.PORTFWD_SRC_IP || ''}
+                  onChange={e => setField('PORTFWD_SRC_IP', e.target.value)}
+                  placeholder="10.11.0.48"
+                />
+              </FormField>
+              <FormField label="Forward Port">
+                <Input
+                  value={env.PORTFWD_SRC_PORT || '554'}
+                  onChange={e => setField('PORTFWD_SRC_PORT', e.target.value)}
+                />
+              </FormField>
+              <FormField label="Listen Port">
+                <Input
+                  value={env.PORTFWD_LISTEN_PORT || ''}
+                  onChange={e => { setField('PORTFWD_LISTEN_PORT', e.target.value); setPortCheck(null); }}
+                  placeholder="5546"
+                />
+              </FormField>
+              <div className="col-span-3 flex items-center gap-2">
+                <Button type="button" size="sm" variant="outline" onClick={checkPort} disabled={portChecking}>
+                  {portChecking ? 'Checking...' : 'Check availability'}
+                </Button>
+                <Button type="button" size="sm" variant="ghost" onClick={suggestPort}>
+                  Suggest an open port
+                </Button>
+                {portCheck && (
+                  <span className={`text-xs ${portCheck.available ? 'text-green-500' : 'text-red-400'}`}>
+                    {portCheck.available ? 'Available' : portCheck.conflict}
+                  </span>
+                )}
+              </div>
+              <p className="col-span-3 text-xs text-muted-foreground">
+                Port availability is checked against ports this dashboard already knows about
+                (other devices&apos; forwards + reserved stack ports) — not a live OS-level socket
+                probe. Applied to the existing nginx container on Save.
+              </p>
+            </div>
+          )}
+        </div>
+      </Section>
+    </>
+  );
+}
+
+function StreamUrlRow({ label, value, onCopy }: { label: string; value: string; onCopy: (v: string) => void }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-xs font-mono text-muted-foreground w-16 shrink-0">{label}</span>
+      <Input readOnly value={value} className="font-mono text-xs" />
+      <Button type="button" size="sm" variant="outline" onClick={() => onCopy(value)}>Copy</Button>
     </div>
   );
 }

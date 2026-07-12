@@ -41,6 +41,12 @@ export default function SettingsPage() {
   function setTriton(key: keyof GlobalSettings['triton'], value: string) {
     setSettings(prev => ({ ...prev, triton: { ...prev.triton, [key]: value } }));
   }
+  function setStreamGateway(key: keyof GlobalSettings['streamGateway'], value: string) {
+    setSettings(prev => ({ ...prev, streamGateway: { ...prev.streamGateway, [key]: value } }));
+  }
+  function setPortForward(key: keyof GlobalSettings['portForward'], value: string) {
+    setSettings(prev => ({ ...prev, portForward: { ...prev.portForward, [key]: value } }));
+  }
 
   async function handleSave() {
     setSaving(true);
@@ -142,6 +148,37 @@ export default function SettingsPage() {
             </p>
           </FormField>
         </div>
+      </Section>
+
+      <Section title="Stream Gateway (MSE/HLS/WebRTC)">
+        <FormField label="Public Base URL">
+          <Input
+            value={settings.streamGateway.publicBaseUrl}
+            onChange={e => setStreamGateway('publicBaseUrl', e.target.value)}
+            placeholder="http://10.11.0.73:8555"
+          />
+          <p className="text-xs text-muted-foreground">
+            LAN-reachable address of the stream-gateway service, used to build the HLS/MSE/WebRTC
+            URLs shown on each device&apos;s Stream tab. Browsers on the LAN can&apos;t resolve
+            Docker container names, so this must be a real IP/hostname — set once per deployment.
+          </p>
+        </FormField>
+      </Section>
+
+      <Section title="Port Forward (nginx)">
+        <FormField label="nginx Container Name">
+          <Input
+            value={settings.portForward.nginxContainerName}
+            onChange={e => setPortForward('nginxContainerName', e.target.value)}
+            placeholder="env_services_nginx"
+          />
+          <p className="text-xs text-muted-foreground">
+            Name of the EXISTING nginx Docker container to manage port forwards in — this dashboard
+            never creates or replaces that container, only regenerates its stream{'{}'} block
+            (existing hand-written forwards in it are preserved). Leave empty to disable the
+            Port Forward feature on device pages.
+          </p>
+        </FormField>
       </Section>
 
       <Section title="PostgreSQL Database">
