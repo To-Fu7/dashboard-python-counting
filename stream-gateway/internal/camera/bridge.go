@@ -338,6 +338,7 @@ func (b *rtspBridge) attach() {
 		b.updateParamsFromAU(au)
 
 		sinks, rtpSinks := b.currentSinks()
+		log.Printf("DEBUG raw video RTP pkt #%d decoded OK, nalCount=%d sinks=%d rtpSinks=%d", rawN, len(au), len(sinks), len(rtpSinks))
 		for _, rs := range rtpSinks {
 			rs.WriteVideoRTP(pkt)
 		}
