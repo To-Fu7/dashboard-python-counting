@@ -132,6 +132,9 @@ export interface PortForwardSettings {
   // this dashboard) — e.g. 'env_services_nginx'. Empty until set once per
   // deployment.
   nginxContainerName: string;
+  // Path to nginx.conf INSIDE that container. Defaults to the standard
+  // location — override if this deployment's image keeps it elsewhere.
+  nginxConfigPath: string;
 }
 
 export interface GlobalSettings {
@@ -192,6 +195,7 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
   },
   portForward: {
     nginxContainerName: '',
+    nginxConfigPath: '/etc/nginx/nginx.conf',
   },
   pg: {
     host: 'host.docker.internal',

@@ -142,13 +142,15 @@ export async function deployPortForwardConfig(): Promise<DeployResult> {
   if (!containerName) {
     return { deployed: false, error: 'nginx container name not configured in Settings' };
   }
+  const configPath = settings.portForward?.nginxConfigPath || '/etc/nginx/nginx.conf';
+  const candidatePath = `${configPath}.candidate`;
 
   let currentConf: string;
   try {
-    const { stdout } = await execAsync(`docker exec ${containerName} cat /etc/nginx/nginx.conf`, { timeout: 10000 });
+    const { stdout } = await execAsync(`docker exec ${containerName} cat "${configPath}"`, { timeout: 10000 });
     currentConf = stdout;
   } catch (e) {
-    return { deployed: false, error: `could not read nginx.conf from container "${containerName}": ${errMessage(e)}` };
+    return { deployed: false, error: `could not read "${configPath}" from container "${containerName}": ${errMessage(e)}` };
   }
 
   let newConf: string;
@@ -162,16 +164,16 @@ export async function deployPortForwardConfig(): Promise<DeployResult> {
   fs.writeFileSync(tmpFile, newConf, 'utf-8');
 
   try {
-    await execAsync(`docker cp "${tmpFile}" ${containerName}:/etc/nginx/nginx.conf.candidate`, { timeout: 10000 });
+    await execAsync(`docker cp "${tmpFile}" ${containerName}:"${candidatePath}"`, { timeout: 10000 });
 
     try {
-      await execAsync(`docker exec ${containerName} nginx -t -c /etc/nginx/nginx.conf.candidate`, { timeout: 10000 });
+      await execAsync(`docker exec ${containerName} nginx -t -c "${candidatePath}"`, { timeout: 10000 });
     } catch (e) {
-      await execAsync(`docker exec ${containerName} rm -f /etc/nginx/nginx.conf.candidate`, { timeout: 5000 }).catch(() => {});
+      await execAsync(`docker exec ${containerName} rm -f "${candidatePath}"`, { timeout: 5000 }).catch(() => {});
       return { deployed: false, error: `nginx -t validation failed, live config left untouched: ${errMessage(e)}` };
     }
 
-    // nginx.conf is commonly a bind-mounted file (confirmed live against
+    // configPath is commonly a bind-mounted file (confirmed live against
     // env_services_nginx — mounted from /opt/services/nginx.conf on the
     // host). `cp`/`docker cp` both try to unlink+recreate the destination
     // inode, which fails on a bind mount even with -f ("File exists" from
@@ -180,10 +182,10 @@ export async function deployPortForwardConfig(): Promise<DeployResult> {
     // redirect truncates-in-place instead, which works on a bind mount the
     // same way `> file` always has.
     await execAsync(
-      `docker exec -i ${containerName} sh -c 'cat > /etc/nginx/nginx.conf' < "${tmpFile}"`,
+      `docker exec -i ${containerName} sh -c 'cat > "${configPath}"' < "${tmpFile}"`,
       { timeout: 10000 }
     );
-    await execAsync(`docker exec ${containerName} rm -f /etc/nginx/nginx.conf.candidate`, { timeout: 5000 }).catch(() => {});
+    await execAsync(`docker exec ${containerName} rm -f "${candidatePath}"`, { timeout: 5000 }).catch(() => {});
     await execAsync(`docker exec ${containerName} nginx -s reload`, { timeout: 10000 });
     return { deployed: true };
   } catch (e) {

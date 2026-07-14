@@ -10,6 +10,7 @@ import { TagSelect } from '@/components/TagSelect';
 import { toast } from 'sonner';
 import type { GlobalSettings } from '@/lib/types';
 import { DEFAULT_SETTINGS } from '@/lib/types';
+import { EDGE_MODE } from '@/lib/edge-mode';
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<GlobalSettings>(DEFAULT_SETTINGS);
@@ -88,30 +89,33 @@ export default function SettingsPage() {
             placeholder="EPiWalk"
           />
         </FormField>
-        <FormField label="Hardware Mode">
-          <div className="flex gap-3 pt-1">
-            {(['jetson', 'server', 'cpu'] as const).map(mode => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => setSettings(prev => ({ ...prev, hardwareMode: mode }))}
-                className={`px-4 py-2 rounded-md text-sm border transition-colors ${
-                  settings.hardwareMode === mode
-                    ? 'border-primary bg-primary/10 text-primary font-medium'
-                    : 'border-border text-muted-foreground hover:text-foreground hover:bg-accent'
-                }`}
-              >
-                {mode === 'jetson' ? 'Jetson / Tegra' : mode === 'server' ? 'Mini Server (runtime: nvidia)' : 'CPU Only'}
-              </button>
-            ))}
-          </div>
-          <p className="text-xs text-muted-foreground mt-1.5">
-            Changing this updates the Docker Compose template for all existing and new cameras,
-            including the Triton Inference Server service (jetson uses the -igpu image; cpu uses onnxruntime).
-          </p>
-        </FormField>
+        {!EDGE_MODE && (
+          <FormField label="Hardware Mode">
+            <div className="flex gap-3 pt-1">
+              {(['jetson', 'server', 'cpu'] as const).map(mode => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setSettings(prev => ({ ...prev, hardwareMode: mode }))}
+                  className={`px-4 py-2 rounded-md text-sm border transition-colors ${
+                    settings.hardwareMode === mode
+                      ? 'border-primary bg-primary/10 text-primary font-medium'
+                      : 'border-border text-muted-foreground hover:text-foreground hover:bg-accent'
+                  }`}
+                >
+                  {mode === 'jetson' ? 'Jetson / Tegra' : mode === 'server' ? 'Mini Server (runtime: nvidia)' : 'CPU Only'}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1.5">
+              Changing this updates the Docker Compose template for all existing and new cameras,
+              including the Triton Inference Server service (jetson uses the -igpu image; cpu uses onnxruntime).
+            </p>
+          </FormField>
+        )}
       </Section>
 
+      {!EDGE_MODE && (
       <Section title="Triton Inference Server">
         <div className="grid grid-cols-2 gap-4">
           <FormField label="Triton Image Tag">
@@ -149,6 +153,7 @@ export default function SettingsPage() {
           </FormField>
         </div>
       </Section>
+      )}
 
       <Section title="Stream Gateway (MSE/HLS/WebRTC)">
         <FormField label="Public Base URL">
@@ -166,21 +171,32 @@ export default function SettingsPage() {
       </Section>
 
       <Section title="Port Forward (nginx)">
-        <FormField label="nginx Container Name">
-          <Input
-            value={settings.portForward.nginxContainerName}
-            onChange={e => setPortForward('nginxContainerName', e.target.value)}
-            placeholder="env_services_nginx"
-          />
-          <p className="text-xs text-muted-foreground">
-            Name of the EXISTING nginx Docker container to manage port forwards in — this dashboard
-            never creates or replaces that container, only regenerates its stream{'{}'} block
-            (existing hand-written forwards in it are preserved). Leave empty to disable the
-            Port Forward feature on device pages.
-          </p>
-        </FormField>
+        <div className="grid grid-cols-2 gap-4">
+          <FormField label="nginx Container Name">
+            <Input
+              value={settings.portForward.nginxContainerName}
+              onChange={e => setPortForward('nginxContainerName', e.target.value)}
+              placeholder="env_services_nginx"
+            />
+          </FormField>
+          <FormField label="nginx.conf Path (inside container)">
+            <Input
+              value={settings.portForward.nginxConfigPath}
+              onChange={e => setPortForward('nginxConfigPath', e.target.value)}
+              placeholder="/etc/nginx/nginx.conf"
+            />
+          </FormField>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Name and internal config path of the EXISTING nginx Docker container to manage port
+          forwards in — this dashboard never creates or replaces that container, only regenerates
+          the stream{'{}'} block in that one file (existing hand-written forwards in it are
+          preserved). Leave the container name empty to disable the Port Forward feature on device
+          pages.
+        </p>
       </Section>
 
+      {!EDGE_MODE && (
       <Section title="PostgreSQL Database">
         <div className="grid grid-cols-2 gap-4">
           <FormField label="Host">
@@ -200,7 +216,9 @@ export default function SettingsPage() {
           </FormField>
         </div>
       </Section>
+      )}
 
+      {!EDGE_MODE && (
       <Section title="MQTT Broker">
         <div className="grid grid-cols-2 gap-4">
           <FormField label="Broker Host">
@@ -234,7 +252,9 @@ export default function SettingsPage() {
           <code className="font-mono bg-muted px-1 rounded">{'{code}'}</code> is replaced with the device code when a new camera is created. Existing cameras are not affected — edit their topics individually on the device page.
         </p>
       </Section>
+      )}
 
+      {!EDGE_MODE && (
       <Section title="Detection Defaults">
         <div className="grid grid-cols-2 gap-4">
           <FormField label="YOLO Confidence">
@@ -268,7 +288,9 @@ export default function SettingsPage() {
           </FormField>
         </div>
       </Section>
+      )}
 
+      {!EDGE_MODE && (
       <Section title="Additional Detection Defaults">
         <p className="text-xs text-muted-foreground -mt-2">
           Applied when a new camera is created. APD and Fire/Smoke are disabled
@@ -316,6 +338,7 @@ export default function SettingsPage() {
           </FormField>
         </div>
       </Section>
+      )}
 
       <div className="flex justify-end">
         <Button onClick={handleSave} disabled={saving}>

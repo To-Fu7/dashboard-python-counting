@@ -10,6 +10,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { Plus, Pencil, Trash2, RefreshCw, Play, Square, RotateCcw, Layers } from 'lucide-react';
 import { toast } from 'sonner';
 import type { ContainerStatus } from '@/lib/types';
+import { EDGE_MODE } from '@/lib/edge-mode';
 
 interface Device {
   deviceCode: string;
@@ -102,10 +103,12 @@ export default function DevicesPage() {
             <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
+          {!EDGE_MODE && (
           <Button variant="outline" size="sm" onClick={fullRestart} disabled={fullRestarting}>
             <Layers className={`w-4 h-4 mr-2 ${fullRestarting ? 'animate-pulse' : ''}`} />
             {fullRestarting ? 'Running...' : 'Full Restart'}
           </Button>
+          )}
           <Button size="sm" onClick={() => setShowAdd(true)}>
             <Plus className="w-4 h-4 mr-2" />
             Add Camera
@@ -125,7 +128,7 @@ export default function DevicesPage() {
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Name</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Code</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Stream URL</th>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground">Status</th>
+                {!EDGE_MODE && <th className="text-left px-4 py-3 font-medium text-muted-foreground">Status</th>}
                 <th className="text-right px-4 py-3 font-medium text-muted-foreground">Actions</th>
               </tr>
             </thead>
@@ -139,11 +142,15 @@ export default function DevicesPage() {
                     <td className="px-4 py-3 text-xs text-muted-foreground max-w-56 truncate" title={device.rtspUrl}>
                       {device.rtspUrl ? device.rtspUrl.replace(/:[^@]+@/, ':***@') : '—'}
                     </td>
+                    {!EDGE_MODE && (
                     <td className="px-4 py-3">
                       <StatusBadge status={device.status} />
                     </td>
+                    )}
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1">
+                        {!EDGE_MODE && (
+                        <>
                         {device.status !== 'running' ? (
                           <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => containerAction(device.deviceCode, 'start')} disabled={isLoading}>
                             <Play className="w-3.5 h-3.5" />
@@ -156,6 +163,8 @@ export default function DevicesPage() {
                         <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => containerAction(device.deviceCode, 'restart')} disabled={isLoading}>
                           <RotateCcw className="w-3.5 h-3.5" />
                         </Button>
+                        </>
+                        )}
                         <Link href={`/devices/${device.deviceCode}`}>
                           <Button size="sm" variant="ghost" className="h-7 px-2">
                             <Pencil className="w-3.5 h-3.5" />

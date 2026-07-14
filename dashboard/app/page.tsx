@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -8,6 +9,7 @@ import { Play, Square, RotateCcw, Camera, AlertCircle, RefreshCw, Layers, Hammer
 import Link from 'next/link';
 import { toast } from 'sonner';
 import type { ContainerStatus } from '@/lib/types';
+import { EDGE_MODE } from '@/lib/edge-mode';
 
 interface Device {
   deviceCode: string;
@@ -19,6 +21,21 @@ interface Device {
 }
 
 export default function HomePage() {
+  const router = useRouter();
+
+  // This page is entirely detection-pipeline status (image build, container
+  // start/stop, GPU/CPU stats) — not relevant to edge mode's camera+
+  // forwarding focus. Redirect to the page that IS the edge landing view.
+  useEffect(() => {
+    if (EDGE_MODE) router.replace('/stream');
+  }, [router]);
+
+  if (EDGE_MODE) return null;
+
+  return <HomePageContent />;
+}
+
+function HomePageContent() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<Record<string, string>>({});

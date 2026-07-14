@@ -6,18 +6,21 @@ import { useEffect, useState } from 'react';
 import { LayoutDashboard, Camera, Settings, ScrollText, Activity, Tv2, UserSquare2 } from 'lucide-react';
 // import { Workflow } from 'lucide-react'; // re-add alongside the Automation nav item below when re-enabling
 import { cn } from '@/lib/utils';
+import { EDGE_MODE } from '@/lib/edge-mode';
 
-const NAV_ITEMS = [
-  { href: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/devices', label: 'Devices', icon: Camera },
-  { href: '/stream', label: 'Stream', icon: Tv2 },
-  { href: '/faces', label: 'Face Enrollment', icon: UserSquare2 },
+const ALL_NAV_ITEMS = [
+  { href: '/', label: 'Dashboard', icon: LayoutDashboard, hideInEdgeMode: true },
+  { href: '/devices', label: 'Devices', icon: Camera, hideInEdgeMode: false },
+  { href: '/stream', label: 'Stream', icon: Tv2, hideInEdgeMode: false },
+  { href: '/faces', label: 'Face Enrollment', icon: UserSquare2, hideInEdgeMode: true },
   // Node-RED integration temporarily disabled (server.js: NODERED_ENABLED) —
   // see nodered/DEV_NOTES.md (gitignored). Re-add once re-enabled:
-  // { href: '/automation', label: 'Automation', icon: Workflow },
-  { href: '/logs', label: 'Logs', icon: ScrollText },
-  { href: '/settings', label: 'Settings', icon: Settings },
+  // { href: '/automation', label: 'Automation', icon: Workflow, hideInEdgeMode: false },
+  { href: '/logs', label: 'Logs', icon: ScrollText, hideInEdgeMode: false },
+  { href: '/settings', label: 'Settings', icon: Settings, hideInEdgeMode: false },
 ];
+
+const NAV_ITEMS = ALL_NAV_ITEMS.filter(item => !(EDGE_MODE && item.hideInEdgeMode));
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -37,7 +40,7 @@ export function Sidebar() {
           <Activity className="w-5 h-5 text-primary" />
           <span className="font-semibold text-sm tracking-wide">{appName}</span>
         </div>
-        <p className="text-xs text-muted-foreground mt-0.5">Counting Dashboard</p>
+        <p className="text-xs text-muted-foreground mt-0.5">{EDGE_MODE ? 'Camera & Stream Forwarding' : 'Counting Dashboard'}</p>
       </div>
 
       <nav className="flex-1 px-3 py-3 space-y-0.5">

@@ -18,6 +18,7 @@ import { Play, Square, RotateCcw, ArrowLeft, Loader2, ArrowDownToLine, ArrowUpFr
 import Link from 'next/link';
 import { toast } from 'sonner';
 import type { DeviceEnvConfig, ContainerStatus } from '@/lib/types';
+import { EDGE_MODE } from '@/lib/edge-mode';
 
 interface DrawnLine { label: string; p1: { x: number; y: number }; p2: { x: number; y: number } }
 
@@ -111,7 +112,8 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
   const [activeTab, setActiveTab] = useState('basic');
   useEffect(() => {
     const tab = new URLSearchParams(window.location.search).get('tab');
-    if (tab) setActiveTab(tab);
+    // Ignore stale/bookmarked links into tabs this mode doesn't render.
+    if (tab && !(EDGE_MODE && (tab === 'lines' || tab === 'logs'))) setActiveTab(tab);
   }, []);
 
   const [env, setEnv] = useState<Partial<DeviceEnvConfig>>({});
@@ -281,6 +283,8 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
           <h1 className="text-xl font-semibold">{env.DEVICE_NAME || code}</h1>
           <p className="text-xs text-muted-foreground font-mono">{code}</p>
         </div>
+        {!EDGE_MODE && (
+        <>
         <StatusBadge status={status} />
         <div className="flex gap-1.5">
           {status !== 'running' ? (
@@ -299,14 +303,16 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
             {actionLoading === 'restart' ? '...' : 'Restart'}
           </Button>
         </div>
+        </>
+        )}
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="basic">Basic Settings</TabsTrigger>
-          <TabsTrigger value="lines">Line Configuration</TabsTrigger>
+          {!EDGE_MODE && <TabsTrigger value="lines">Line Configuration</TabsTrigger>}
           <TabsTrigger value="stream">Stream</TabsTrigger>
-          <TabsTrigger value="logs">Logs</TabsTrigger>
+          {!EDGE_MODE && <TabsTrigger value="logs">Logs</TabsTrigger>}
         </TabsList>
 
         {/* ── BASIC SETTINGS ── */}
@@ -331,6 +337,8 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
             </FormField>
           </Section>
 
+          {!EDGE_MODE && (
+          <>
           <Section title="MQTT Topics">
             <div className="grid grid-cols-2 gap-4">
               <FormField label="Activity Topic">
@@ -551,6 +559,8 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
               </div>
             </div>
           </Section>
+          </>
+          )}
 
           <div className="flex justify-end">
             <Button onClick={handleSave} disabled={saving}>
@@ -560,6 +570,7 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
         </TabsContent>
 
         {/* ── LINE CONFIGURATION ── */}
+        {!EDGE_MODE && (
         <TabsContent value="lines" className="space-y-6 pt-4">
           {(env.DETECTION_MODE || 'line_crossing') === 'line_crossing' ? (
             <>
@@ -684,6 +695,7 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
             </Button>
           </div>
         </TabsContent>
+        )}
 
         {/* ── STREAM (MSE/HLS/WebRTC + Port Forward) ── */}
         <TabsContent value="stream" className="space-y-6 pt-4">
@@ -697,6 +709,7 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
         </TabsContent>
 
         {/* ── LOGS ── */}
+        {!EDGE_MODE && (
         <TabsContent value="logs" className="pt-4 space-y-4">
           {status === 'running' && (
             <Section title="Live Stream">
@@ -737,6 +750,7 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
             </div>
           </Section>
         </TabsContent>
+        )}
       </Tabs>
     </div>
   );
