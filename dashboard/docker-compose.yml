@@ -14,14 +14,14 @@ services:
     mem_limit: 4g
     memswap_limit: 4g
     ports:
-      - "3000:3000"
-    runtime: nvidia
+      - "3001:3000"
+    # runtime: nvidia
     volumes:
       - ../python-counting:/python-counting
       - ../stream-gateway:/stream-gateway:ro
       - /var/run/docker.sock:/var/run/docker.sock
       - dashboard-data:/app/data
-      - /usr/bin/nvidia-smi:/usr/bin/nvidia-smi:ro
+      # - /usr/bin/nvidia-smi:/usr/bin/nvidia-smi:ro
     environment:
       - PYTHON_COUNTING_DIR=/python-counting
       - HOST_PYTHON_COUNTING_DIR=${HOST_PYTHON_COUNTING_DIR}
