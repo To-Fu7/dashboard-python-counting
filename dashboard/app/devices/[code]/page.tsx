@@ -930,8 +930,9 @@ function StreamSettingsTab({
               </FormField>
               <FormField label="Forward Port">
                 <Input
-                  value={env.PORTFWD_SRC_PORT || '554'}
+                  value={env.PORTFWD_SRC_PORT ?? ''}
                   onChange={e => setField('PORTFWD_SRC_PORT', e.target.value)}
+                  placeholder="554"
                 />
               </FormField>
               <FormField label="Listen Port">
