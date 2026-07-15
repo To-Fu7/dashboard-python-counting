@@ -809,9 +809,9 @@ function StreamSettingsTab({
       // can't know how this browser reached the dashboard — repoint them at the
       // host we're actually loaded from.
       const fix = (u: StreamUrlSet) => ({
-        hls: toReachableStreamUrl(u.hls),
-        mse: toReachableStreamUrl(u.mse),
-        webrtc: toReachableStreamUrl(u.webrtc),
+        hls: toReachableStreamUrl(u.hls, data.publicBaseUrl),
+        mse: toReachableStreamUrl(u.mse, data.publicBaseUrl),
+        webrtc: toReachableStreamUrl(u.webrtc, data.publicBaseUrl),
       });
       setUrls({ main: fix(data.main), sub: data.sub ? fix(data.sub) : null });
     } catch (e) {

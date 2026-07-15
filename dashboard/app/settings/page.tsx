@@ -42,6 +42,9 @@ export default function SettingsPage() {
   function setTriton(key: keyof GlobalSettings['triton'], value: string) {
     setSettings(prev => ({ ...prev, triton: { ...prev.triton, [key]: value } }));
   }
+  function setStreamGateway(key: keyof GlobalSettings['streamGateway'], value: string) {
+    setSettings(prev => ({ ...prev, streamGateway: { ...prev.streamGateway, [key]: value } }));
+  }
 
   async function handleSave() {
     setSaving(true);
@@ -148,6 +151,25 @@ export default function SettingsPage() {
         </div>
       </Section>
       )}
+
+      <Section title="Stream Gateway (MSE/HLS/WebRTC)">
+        <FormField label="Public Base URL (optional)">
+          <Input
+            value={settings.streamGateway.publicBaseUrl}
+            onChange={e => setStreamGateway('publicBaseUrl', e.target.value)}
+            placeholder="Leave empty — auto-detected from your browser"
+          />
+          <p className="text-xs text-muted-foreground">
+            Leave <span className="font-medium">empty</span> in almost every case: the browser
+            derives the stream host from the address it already reached this dashboard on, so no
+            setup is needed. Only set this (e.g.{' '}
+            <span className="font-mono">http://10.11.0.73:8555</span>) if stream-gateway is NOT
+            reachable at this dashboard&apos;s own host — behind a different hostname or a reverse
+            proxy. Only the host and port are used; it applies on the next page load, with no
+            container restart.
+          </p>
+        </FormField>
+      </Section>
 
       {!EDGE_MODE && (
       <Section title="PostgreSQL Database">

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { readDeviceEnv } from '@/lib/env-parser';
 import { getCameraStreamUrls, upsertCameraStream } from '@/lib/stream-gateway';
+import { readSettings } from '@/lib/settings';
 
 export const dynamic = 'force-dynamic';
 
@@ -50,7 +51,14 @@ export async function GET(
         sub = null;
       }
     }
-    return NextResponse.json({ main, sub });
+    // The URLs above are built against the gateway's own PUBLIC_BASE_URL, which
+    // can't know how the browser reached us. Hand the configured override along
+    // (usually empty) so the client can repoint them — see toReachableStreamUrl.
+    return NextResponse.json({
+      main,
+      sub,
+      publicBaseUrl: readSettings().streamGateway.publicBaseUrl,
+    });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 502 });
   }

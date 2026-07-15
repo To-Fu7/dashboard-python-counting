@@ -116,6 +116,19 @@ export interface TritonSettings {
   faceEmbedModel: string; // ArcFace model repo name used to embed enrollment photos (must match cameras' FACE_EMBED_MODEL)
 }
 
+export interface StreamGatewaySettings {
+  // OPTIONAL override for the host[:port] the browser should fetch streams from
+  // (e.g. 'http://10.11.0.73:8555'). Leave EMPTY for the normal case: the
+  // browser derives it from the address it already reached the dashboard on
+  // (see toReachableStreamUrl), which needs no per-deployment configuration.
+  //
+  // Only set this when the gateway isn't reachable at the dashboard's own host
+  // — e.g. it sits behind a different hostname or a reverse proxy. Applied
+  // client-side, so a change takes effect on the next page load; it does NOT
+  // need the gateway container recreated.
+  publicBaseUrl: string;
+}
+
 export interface PortForwardSettings {
   // Name of the EXISTING nginx Docker container to manage (not created by
   // this dashboard) — e.g. 'env_services_nginx'. Empty until set once per
@@ -130,6 +143,7 @@ export interface GlobalSettings {
   appName: string;
   hardwareMode: HardwareMode;
   triton: TritonSettings;
+  streamGateway: StreamGatewaySettings;
   portForward: PortForwardSettings;
   pg: {
     host: string;
@@ -177,6 +191,9 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
     imageTag: '24.08',
     defaultModel: 'yolo26m_640',
     faceEmbedModel: '',
+  },
+  streamGateway: {
+    publicBaseUrl: '',
   },
   portForward: {
     nginxContainerName: 'edge-portfwd-nginx',

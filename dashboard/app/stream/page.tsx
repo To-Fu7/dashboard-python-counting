@@ -179,7 +179,7 @@ function StreamCell({ device }: { device: Device }) {
         if (!rawHlsUrl) { setStreamError(true); return; }
         // Repoint at the host this browser reached the dashboard on — the
         // gateway's own PUBLIC_BASE_URL can't know it.
-        const hlsUrl = toReachableStreamUrl(rawHlsUrl);
+        const hlsUrl = toReachableStreamUrl(rawHlsUrl, data?.publicBaseUrl);
 
         if (video.canPlayType('application/vnd.apple.mpegurl')) {
           video.src = hlsUrl; // Safari: native HLS support, no hls.js needed

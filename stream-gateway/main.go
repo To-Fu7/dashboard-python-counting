@@ -37,6 +37,35 @@ func newWebRTCSettingEngine(udpMuxPort int) (pionwebrtc.SettingEngine, error) {
 	return settingEngine, nil
 }
 
+// withCORS makes every endpoint usable from a browser page served by a
+// different origin, which is the normal case here and not an edge case: the
+// dashboard is on :3001 while this gateway is on :8555, so every hls.js
+// playlist/segment XHR and every WHEP POST is cross-origin. Without these
+// headers the browser blocks them outright — HLS and WebRTC silently render
+// nothing while curl against the same URLs works fine.
+//
+// A WHEP POST (Content-Type: application/sdp) is a non-simple request, so the
+// browser sends an OPTIONS preflight first; the bare ServeMux answers that with
+// 405 and the request never happens. Answer it here.
+//
+// Origin "*" is deliberate: this serves unauthenticated LAN media on an edge
+// appliance (no cookies, no credentials), and the dashboard's origin varies by
+// how the operator reaches it — localhost, LAN IP, or WireGuard IP — so
+// pinning a single origin would just reintroduce the manual-configuration
+// problem this replaced.
+func withCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
 	cfg := config.Load()
 
@@ -53,7 +82,7 @@ func main() {
 
 	log.Printf("stream-gateway listening on %s (public base URL: %s, webrtc UDP mux :%d)",
 		cfg.ListenAddr, cfg.PublicBaseURL, cfg.WebRTCUDPMuxPort)
-	if err := http.ListenAndServe(cfg.ListenAddr, mux); err != nil {
+	if err := http.ListenAndServe(cfg.ListenAddr, withCORS(mux)); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
 }
