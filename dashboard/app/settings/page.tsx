@@ -45,9 +45,6 @@ export default function SettingsPage() {
   function setStreamGateway(key: keyof GlobalSettings['streamGateway'], value: string) {
     setSettings(prev => ({ ...prev, streamGateway: { ...prev.streamGateway, [key]: value } }));
   }
-  function setPortForward(key: keyof GlobalSettings['portForward'], value: string) {
-    setSettings(prev => ({ ...prev, portForward: { ...prev.portForward, [key]: value } }));
-  }
 
   async function handleSave() {
     setSaving(true);
@@ -168,33 +165,6 @@ export default function SettingsPage() {
             Docker container names, so this must be a real IP/hostname — set once per deployment.
           </p>
         </FormField>
-      </Section>
-
-      <Section title="Port Forward (nginx)">
-        <div className="grid grid-cols-2 gap-4">
-          <FormField label="nginx Container Name">
-            <Input
-              value={settings.portForward.nginxContainerName}
-              onChange={e => setPortForward('nginxContainerName', e.target.value)}
-              placeholder="edge-portfwd-nginx"
-            />
-          </FormField>
-          <FormField label="nginx.conf Path (inside container)">
-            <Input
-              value={settings.portForward.nginxConfigPath}
-              onChange={e => setPortForward('nginxConfigPath', e.target.value)}
-              placeholder="/etc/nginx/nginx.conf"
-            />
-          </FormField>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Name and internal config path of the dedicated, dashboard-owned nginx container
-          (<span className="font-mono">edge-portfwd-nginx</span>, defined in the dashboard&apos;s
-          docker-compose) used only for raw TCP port forwarding. The dashboard regenerates this
-          container&apos;s ENTIRE nginx.conf from every device&apos;s forward settings on each save —
-          it is stream-only and shares nothing with any web/reverse-proxy nginx. Leave the container
-          name empty to disable the Port Forward feature on device pages.
-        </p>
       </Section>
 
       {!EDGE_MODE && (
