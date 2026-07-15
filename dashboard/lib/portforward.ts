@@ -34,6 +34,15 @@ const execAsync = promisify(exec);
 export const LISTEN_PORT_MIN = 5500;
 export const LISTEN_PORT_MAX = 5600;
 
+// Fixed identity of the dedicated forwarder container. These used to be
+// user-editable in Settings, but that only created a footgun: a persisted
+// EMPTY string in settings.json overrode the default and silently disabled the
+// whole feature (readSettings merges { ...DEFAULT, ...parsed }, and "" is a
+// present key that wins over the default). They're effectively constants now; a
+// non-empty settings value still wins as an escape hatch, but empty falls back.
+const DEFAULT_NGINX_CONTAINER = 'edge-portfwd-nginx';
+const DEFAULT_NGINX_CONFIG_PATH = '/etc/nginx/nginx.conf';
+
 export interface PortForward {
   deviceCode: string;
   listenPort: string;
@@ -107,9 +116,9 @@ ${servers}
 
 export interface DeployResult {
   deployed: boolean;
-  // true when there was nothing to do because the feature is turned off (no
-  // nginx container configured). Callers should treat this as benign, NOT as a
-  // deploy failure to surface to the user.
+  // true when there was nothing to deploy against — the forwarder container
+  // isn't running in this environment. Callers should treat this as benign,
+  // NOT as a deploy failure to surface to the user.
   skipped?: boolean;
   error?: string;
 }
@@ -120,11 +129,8 @@ export interface DeployResult {
 // invalid candidate never reaches the real nginx.conf path.
 export async function deployPortForwardConfig(): Promise<DeployResult> {
   const settings = readSettings();
-  const containerName = settings.portForward?.nginxContainerName;
-  if (!containerName) {
-    return { deployed: false, skipped: true, error: 'nginx container name not configured in Settings' };
-  }
-  const configPath = settings.portForward?.nginxConfigPath || '/etc/nginx/nginx.conf';
+  const containerName = settings.portForward?.nginxContainerName || DEFAULT_NGINX_CONTAINER;
+  const configPath = settings.portForward?.nginxConfigPath || DEFAULT_NGINX_CONFIG_PATH;
   const candidatePath = `${configPath}.candidate`;
 
   const newConf = buildNginxConf(collectPortForwards());
@@ -157,7 +163,13 @@ export async function deployPortForwardConfig(): Promise<DeployResult> {
     await execAsync(`docker exec ${containerName} nginx -s reload`, { timeout: 10000 });
     return { deployed: true };
   } catch (e) {
-    return { deployed: false, error: errMessage(e) };
+    const msg = errMessage(e);
+    // A stack that simply doesn't run the forwarder container shouldn't nag on
+    // every save — treat "container missing" as benign (skipped), not an error.
+    if (/No such container/i.test(msg)) {
+      return { deployed: false, skipped: true, error: `port-forward nginx container "${containerName}" is not running` };
+    }
+    return { deployed: false, error: msg };
   } finally {
     fs.unlinkSync(tmpFile);
   }
