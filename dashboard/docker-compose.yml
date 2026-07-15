@@ -35,6 +35,38 @@ services:
       - envisions
     # depends_on:
     #   - nodered
+
+  # Dashboard-owned, stream-only nginx dedicated to raw TCP (RTSP)
+  # port-forwarding. The dashboard regenerates its ENTIRE nginx.conf from
+  # every device's PORTFWD_* vars (see dashboard/lib/portforward.ts) — it does
+  # NOT share the reverse-proxy nginx of any other stack, so a bad forward can
+  # never break the web/admin/peerjs stack.
+  #
+  # The whole 5500-5600 host-port range is published up front so adding/removing
+  # a forward via the dashboard NEVER needs this container to be recreated — any
+  # listen port the dashboard picks inside that range is already reachable from
+  # the host. (Docker can't add published ports to a running container, so the
+  # range is the trick that makes it fully dashboard-controlled.)
+  #
+  # NOTE: publishing a range binds EVERY port in it on the host — if some other
+  # container already publishes a port in 5500-5600 (e.g. a legacy hand-written
+  # nginx forward), this service fails to start with "address already in use".
+  # Shift the range here + LISTEN_PORT_MIN/MAX in lib/portforward.ts together if
+  # that happens.
+  edge-portfwd-nginx:
+    image: nginx:1.27-alpine
+    container_name: edge-portfwd-nginx
+    restart: unless-stopped
+    ports:
+      - "5500-5600:5500-5600"
+    volumes:
+      # Bind-mounted single file: the dashboard writes back via `cat >`
+      # (truncate-in-place), which works on a bind mount, so generated config
+      # persists across restart/recreate.
+      - ./nginx/portfwd-nginx.conf:/etc/nginx/nginx.conf
+    networks:
+      - default
+      - envisions
   # nodered:
   #   image: nodered/node-red:latest
   #   container_name: nodered

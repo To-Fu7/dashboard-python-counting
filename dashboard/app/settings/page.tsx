@@ -176,7 +176,7 @@ export default function SettingsPage() {
             <Input
               value={settings.portForward.nginxContainerName}
               onChange={e => setPortForward('nginxContainerName', e.target.value)}
-              placeholder="env_services_nginx"
+              placeholder="edge-portfwd-nginx"
             />
           </FormField>
           <FormField label="nginx.conf Path (inside container)">
@@ -188,11 +188,12 @@ export default function SettingsPage() {
           </FormField>
         </div>
         <p className="text-xs text-muted-foreground">
-          Name and internal config path of the EXISTING nginx Docker container to manage port
-          forwards in — this dashboard never creates or replaces that container, only regenerates
-          the stream{'{}'} block in that one file (existing hand-written forwards in it are
-          preserved). Leave the container name empty to disable the Port Forward feature on device
-          pages.
+          Name and internal config path of the dedicated, dashboard-owned nginx container
+          (<span className="font-mono">edge-portfwd-nginx</span>, defined in the dashboard&apos;s
+          docker-compose) used only for raw TCP port forwarding. The dashboard regenerates this
+          container&apos;s ENTIRE nginx.conf from every device&apos;s forward settings on each save —
+          it is stream-only and shares nothing with any web/reverse-proxy nginx. Leave the container
+          name empty to disable the Port Forward feature on device pages.
         </p>
       </Section>
 

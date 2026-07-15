@@ -194,7 +194,7 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
     publicBaseUrl: '',
   },
   portForward: {
-    nginxContainerName: '',
+    nginxContainerName: 'edge-portfwd-nginx',
     nginxConfigPath: '/etc/nginx/nginx.conf',
   },
   pg: {

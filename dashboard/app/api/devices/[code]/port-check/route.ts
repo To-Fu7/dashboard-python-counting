@@ -1,10 +1,9 @@
 import { NextResponse } from 'next/server';
 import { findPortConflict } from '@/lib/portforward';
 
-// Backs the device Stream tab's "Check availability" action (Phase 5) —
-// a registry-based check against ports this dashboard already knows about
-// (reserved stack ports + every other device's PORTFWD_LISTEN_PORT), NOT a
-// live OS-level socket probe.
+// Backs the device Stream tab's "Check availability" action — a registry-based
+// check that the port is inside the published 5500-5600 range and not already
+// used by another device's PORTFWD_LISTEN_PORT, NOT a live OS-level socket probe.
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ code: string }> }

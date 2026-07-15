@@ -63,16 +63,21 @@ export async function PUT(
       removeCameraStream(subCode).catch(() => {});
     }
 
-    // Best-effort, same non-blocking posture as the stream-gateway calls
-    // above — regenerate + redeploy on every save regardless of whether
-    // PORTFWD_* fields were actually present in this particular partial
-    // body, since disabling a forward (PORTFWD_ENABLED=false) also needs a
-    // redeploy to remove it from nginx's managed block.
-    deployPortForwardConfig().then(result => {
-      if (!result.deployed) console.warn(`port-forward deploy skipped/failed for ${code}:`, result.error);
-    }).catch(err => console.warn(`port-forward deploy failed for ${code}:`, err));
+    // Regenerate + redeploy the port-forward nginx on every save regardless of
+    // whether PORTFWD_* fields were in this particular partial body, since
+    // disabling a forward (PORTFWD_ENABLED=false) also needs a redeploy to drop
+    // it. Unlike the fire-and-forget stream-gateway calls above, this is AWAITED
+    // so the response can tell the UI whether nginx actually got the new config
+    // — a silent fire-and-forget here was why saves looked applied but weren't.
+    // The env is already persisted; a deploy failure is reported, not fatal.
+    let portForward;
+    try {
+      portForward = await deployPortForwardConfig();
+    } catch (err) {
+      portForward = { deployed: false, error: String(err) };
+    }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, portForward });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });
   }

@@ -244,7 +244,16 @@ export default function DeviceDetailPage({ params }: { params: Promise<{ code: s
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      toast.success('Settings saved. Restart service to apply changes.');
+      // The env was saved regardless; the port-forward nginx deploy is a
+      // separate step that can fail on its own — surface that instead of a
+      // blanket "saved" that hides a forward never reaching nginx. `skipped`
+      // means the feature is simply off (no nginx container configured).
+      const pf = data.portForward;
+      if (pf && !pf.deployed && !pf.skipped) {
+        toast.warning(`Settings saved, but port-forward deploy failed: ${pf.error}`);
+      } else {
+        toast.success('Settings saved. Restart service to apply changes.');
+      }
     } catch (e) {
       toast.error(`Failed to save: ${e}`);
     } finally {
@@ -824,10 +833,10 @@ function StreamSettingsTab({
   }
 
   function suggestPort() {
-    // Client-side starting point only (past the 4 pre-existing hand-written
-    // forwards observed live at 5542-5545) — "Check availability" confirms
-    // it server-side against the real registry.
-    setField('PORTFWD_LISTEN_PORT', String(5546 + Math.floor(Math.random() * 50)));
+    // Client-side starting point only, inside the 5500-5600 range published by
+    // the edge-portfwd-nginx container — "Check availability" confirms it
+    // server-side against the real registry.
+    setField('PORTFWD_LISTEN_PORT', String(5500 + Math.floor(Math.random() * 101)));
     setPortCheck(null);
   }
 
@@ -946,18 +955,11 @@ function StreamSettingsTab({
                 )}
               </div>
               <p className="col-span-3 text-xs text-muted-foreground">
-                Port availability is checked against ports this dashboard already knows about
-                (other devices&apos; forwards + reserved stack ports) — not a live OS-level socket
-                probe. Applied to the existing nginx container&apos;s stream{'{}'} block on Save
-                (existing hand-written forwards are preserved).
-              </p>
-              <p className="col-span-3 text-xs text-amber-500">
-                One-time manual step required per Listen Port: the nginx container&apos;s own
-                docker-compose port mapping must also publish this port (e.g. add
-                &quot;{env.PORTFWD_LISTEN_PORT || '5546'}:{env.PORTFWD_LISTEN_PORT || '5546'}&quot;
-                and recreate that container) — this dashboard only manages nginx&apos;s internal
-                config, not its published port list, since it doesn&apos;t own that container&apos;s
-                lifecycle.
+                Listen Port must be in the range <span className="font-medium">5500&ndash;5600</span>,
+                which the dedicated <span className="font-mono">edge-portfwd-nginx</span> container
+                already publishes on the host. Availability is checked against ports this dashboard
+                already forwards (other devices) — not a live OS-level socket probe. Applied on Save:
+                the whole forwarder config is regenerated and reloaded, no container recreate needed.
               </p>
             </div>
           )}
