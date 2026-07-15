@@ -17,15 +17,14 @@ export async function PUT(request: Request) {
     const body = await request.json();
 
     // Merge, don't replace — a caller sending a partial body (e.g. just
-    // { streamGateway: { publicBaseUrl } }) must not blow away every other
-    // section (pg/mqtt credentials, hardwareMode, ...). Nested nully nested
-    // objects merge shallowly per-section, matching how each section is a
-    // flat bag of fields with no further nesting.
+    // { triton: { imageTag } }) must not blow away every other section
+    // (pg/mqtt credentials, hardwareMode, ...). Nested objects merge shallowly
+    // per-section, matching how each section is a flat bag of fields with no
+    // further nesting.
     const merged = {
       ...prev,
       ...body,
       triton: { ...prev.triton, ...body.triton },
-      streamGateway: { ...prev.streamGateway, ...body.streamGateway },
       portForward: { ...prev.portForward, ...body.portForward },
       pg: { ...prev.pg, ...body.pg },
       mqtt: { ...prev.mqtt, ...body.mqtt },
@@ -35,15 +34,9 @@ export async function PUT(request: Request) {
 
     const modeChanged = body.hardwareMode && body.hardwareMode !== prev.hardwareMode;
     const tritonTagChanged = body.triton?.imageTag && body.triton.imageTag !== prev.triton.imageTag;
-    const streamGatewayUrlChanged = body.streamGateway?.publicBaseUrl !== undefined
-      && body.streamGateway.publicBaseUrl !== prev.streamGateway.publicBaseUrl;
-    if (modeChanged || tritonTagChanged || streamGatewayUrlChanged) {
-      // regenerates every camera service AND the triton/model-builder/stream-gateway services
-      applyHardwareModeToAll(
-        body.hardwareMode ?? prev.hardwareMode,
-        body.triton?.imageTag,
-        body.streamGateway?.publicBaseUrl ?? prev.streamGateway.publicBaseUrl
-      );
+    if (modeChanged || tritonTagChanged) {
+      // regenerates every camera service AND the triton/model-builder services
+      applyHardwareModeToAll(body.hardwareMode ?? prev.hardwareMode, body.triton?.imageTag);
     }
     return NextResponse.json({
       success: true,

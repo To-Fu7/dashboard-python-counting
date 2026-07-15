@@ -141,7 +141,7 @@ export async function POST(request: Request) {
       lineA: '[(100, 300), (700, 300)]',
     });
 
-    addService(deviceCode, settings.hardwareMode, settings.triton.imageTag, settings.streamGateway.publicBaseUrl);
+    addService(deviceCode, settings.hardwareMode, settings.triton.imageTag);
 
     // Best-effort: stream-gateway may not be up yet, and a camera can be
     // added with no RTSP URL set yet — neither should fail device creation.

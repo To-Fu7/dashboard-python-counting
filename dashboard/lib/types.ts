@@ -116,17 +116,6 @@ export interface TritonSettings {
   faceEmbedModel: string; // ArcFace model repo name used to embed enrollment photos (must match cameras' FACE_EMBED_MODEL)
 }
 
-export interface StreamGatewaySettings {
-  // Browser-resolvable LAN host[:port] stream-gateway is reachable at (e.g.
-  // 'http://192.168.1.50:8555') — distinct from the container-internal
-  // address the dashboard itself uses to reach it (STREAM_GATEWAY_URL env,
-  // resolved by container name over the envisions network). Needed because
-  // the URLs returned by "Expose CCTV URL" must work from a browser on the
-  // LAN, which can't resolve Docker container names. Empty until set once
-  // per deployment — there's no way to auto-detect the right LAN IP.
-  publicBaseUrl: string;
-}
-
 export interface PortForwardSettings {
   // Name of the EXISTING nginx Docker container to manage (not created by
   // this dashboard) — e.g. 'env_services_nginx'. Empty until set once per
@@ -141,7 +130,6 @@ export interface GlobalSettings {
   appName: string;
   hardwareMode: HardwareMode;
   triton: TritonSettings;
-  streamGateway: StreamGatewaySettings;
   portForward: PortForwardSettings;
   pg: {
     host: string;
@@ -189,9 +177,6 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
     imageTag: '24.08',
     defaultModel: 'yolo26m_640',
     faceEmbedModel: '',
-  },
-  streamGateway: {
-    publicBaseUrl: '',
   },
   portForward: {
     nginxContainerName: 'edge-portfwd-nginx',

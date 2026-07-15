@@ -42,9 +42,6 @@ export default function SettingsPage() {
   function setTriton(key: keyof GlobalSettings['triton'], value: string) {
     setSettings(prev => ({ ...prev, triton: { ...prev.triton, [key]: value } }));
   }
-  function setStreamGateway(key: keyof GlobalSettings['streamGateway'], value: string) {
-    setSettings(prev => ({ ...prev, streamGateway: { ...prev.streamGateway, [key]: value } }));
-  }
 
   async function handleSave() {
     setSaving(true);
@@ -151,21 +148,6 @@ export default function SettingsPage() {
         </div>
       </Section>
       )}
-
-      <Section title="Stream Gateway (MSE/HLS/WebRTC)">
-        <FormField label="Public Base URL">
-          <Input
-            value={settings.streamGateway.publicBaseUrl}
-            onChange={e => setStreamGateway('publicBaseUrl', e.target.value)}
-            placeholder="http://10.11.0.73:8555"
-          />
-          <p className="text-xs text-muted-foreground">
-            LAN-reachable address of the stream-gateway service, used to build the HLS/MSE/WebRTC
-            URLs shown on each device&apos;s Stream tab. Browsers on the LAN can&apos;t resolve
-            Docker container names, so this must be a real IP/hostname — set once per deployment.
-          </p>
-        </FormField>
-      </Section>
 
       {!EDGE_MODE && (
       <Section title="PostgreSQL Database">

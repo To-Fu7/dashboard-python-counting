@@ -8,6 +8,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { RefreshCw, Maximize2, Loader2, ArrowDownToLine, ArrowUpFromLine } from 'lucide-react';
 import { toast } from 'sonner';
 import type { ContainerStatus } from '@/lib/types';
+import { toReachableStreamUrl } from '@/lib/utils';
 
 interface Device {
   deviceCode: string;
@@ -174,8 +175,11 @@ function StreamCell({ device }: { device: Device }) {
       .then(r => r.json())
       .then(data => {
         if (cancelled) return;
-        const hlsUrl: string | undefined = data?.main?.hls;
-        if (!hlsUrl) { setStreamError(true); return; }
+        const rawHlsUrl: string | undefined = data?.main?.hls;
+        if (!rawHlsUrl) { setStreamError(true); return; }
+        // Repoint at the host this browser reached the dashboard on — the
+        // gateway's own PUBLIC_BASE_URL can't know it.
+        const hlsUrl = toReachableStreamUrl(rawHlsUrl);
 
         if (video.canPlayType('application/vnd.apple.mpegurl')) {
           video.src = hlsUrl; // Safari: native HLS support, no hls.js needed

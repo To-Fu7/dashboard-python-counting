@@ -19,6 +19,7 @@ import Link from 'next/link';
 import { toast } from 'sonner';
 import type { DeviceEnvConfig, ContainerStatus } from '@/lib/types';
 import { EDGE_MODE } from '@/lib/edge-mode';
+import { toReachableStreamUrl } from '@/lib/utils';
 
 interface DrawnLine { label: string; p1: { x: number; y: number }; p2: { x: number; y: number } }
 
@@ -804,7 +805,15 @@ function StreamSettingsTab({
       const res = await fetch(`/api/devices/${code}/stream-urls`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      setUrls(data);
+      // stream-gateway builds these against its own PUBLIC_BASE_URL, which
+      // can't know how this browser reached the dashboard — repoint them at the
+      // host we're actually loaded from.
+      const fix = (u: StreamUrlSet) => ({
+        hls: toReachableStreamUrl(u.hls),
+        mse: toReachableStreamUrl(u.mse),
+        webrtc: toReachableStreamUrl(u.webrtc),
+      });
+      setUrls({ main: fix(data.main), sub: data.sub ? fix(data.sub) : null });
     } catch (e) {
       toast.error(`Failed to fetch stream URLs: ${e}`);
     } finally {

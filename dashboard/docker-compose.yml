@@ -18,14 +18,12 @@ services:
     # runtime: nvidia
     volumes:
       - ../python-counting:/python-counting
-      - ../stream-gateway:/stream-gateway:ro
       - /var/run/docker.sock:/var/run/docker.sock
       - dashboard-data:/app/data
       # - /usr/bin/nvidia-smi:/usr/bin/nvidia-smi:ro
     environment:
       - PYTHON_COUNTING_DIR=/python-counting
       - HOST_PYTHON_COUNTING_DIR=${HOST_PYTHON_COUNTING_DIR}
-      - STREAM_GATEWAY_DIR=/stream-gateway
       - SETTINGS_FILE=/app/data/settings.json
       # - NODERED_URL=http://nodered:1880
       - NVIDIA_VISIBLE_DEVICES=all
@@ -35,6 +33,31 @@ services:
       - envisions
     # depends_on:
     #   - nodered
+
+  # Dashboard-owned RTSP -> HLS/MSE/WebRTC gateway (Go service in
+  # ../stream-gateway). Built from source here so `docker compose up -d --build`
+  # in this directory builds it alongside the dashboard — it used to be
+  # generated into python-counting's compose as a bare `image:` with no build
+  # context, so the image was never built and every "Expose CCTV URL" call 502'd
+  # against a container that had never existed.
+  #
+  # No environment is needed: the Go defaults (LISTEN_ADDR=:8555,
+  # WEBRTC_UDP_MUX_PORT=8189) already match the published ports, and
+  # PUBLIC_BASE_URL is irrelevant now that the browser rewrites the host of the
+  # returned URLs itself (see toReachableStreamUrl in lib/utils.ts).
+  stream-gateway:
+    build:
+      context: ../stream-gateway
+      dockerfile: Dockerfile
+    image: stream-gateway:latest
+    container_name: stream-gateway
+    restart: unless-stopped
+    ports:
+      - "8555:8555"
+      - "8189:8189/udp"
+    networks:
+      - default
+      - envisions
 
   # Dashboard-owned, stream-only nginx dedicated to raw TCP (RTSP)
   # port-forwarding. The dashboard regenerates its ENTIRE nginx.conf from
