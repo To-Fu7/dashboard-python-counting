@@ -3,13 +3,20 @@
 // container lifecycle patterns this mirrors via the shell-out-to-`docker`
 // convention already established in compose.ts).
 //
-// The nginx container is NOT owned by this dashboard — confirmed live
-// against the real deployment that its nginx.conf already has a hand-written
-// top-level `stream { ... }` block with real, currently-active forwards that
-// predate this feature. Regenerating the whole file (rather than writing to
-// a separate include path) is the only option that doesn't require a manual
-// one-time migration, so this module preserves everything outside a pair of
-// marker comments and only ever rewrites the content between them.
+// The nginx container is NOT owned by this dashboard. Two real-world shapes
+// of its nginx.conf are handled (both confirmed against live deployments):
+//   1. It already has a hand-written top-level `stream { ... }` block with
+//      real, currently-active forwards that predate this feature — we insert
+//      into it and preserve those byte-for-byte.
+//   2. It has NO stream{} block at all (a plain http-only reverse-proxy
+//      config) — we create one in the main context. This needs nginx built
+//      --with-stream; deployPortForwardConfig preflights that so a build
+//      without the stream module gets a clear error instead of a cryptic
+//      `nginx -t` failure.
+// Regenerating the whole file (rather than writing to a separate include
+// path) is the only option that doesn't require a manual one-time migration,
+// so this module preserves everything outside a pair of marker comments and
+// only ever rewrites the content between them.
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -99,32 +106,47 @@ export function mergeIntoNginxConf(currentConf: string, forwards: PortForward[])
     return `${before}${managedBlock}${after}`;
   }
 
-  // First time: find the top-level `stream {` block and insert the managed
-  // block just before its closing brace, using brace-depth tracking (not a
-  // regex) since the block can contain nested server{}/braces.
+  // Case 2: an existing top-level `stream {` block (hand-written forwards that
+  // predate this feature) → insert the managed block just before its closing
+  // brace, using brace-depth tracking (not a regex) since the block can
+  // contain nested server{} braces.
   const streamMatch = currentConf.match(/^stream\s*\{/m);
-  if (!streamMatch || streamMatch.index === undefined) {
-    throw new Error('No top-level stream{} block found in nginx.conf — add an empty "stream {}" block to it manually first');
-  }
-  const openBraceIdx = currentConf.indexOf('{', streamMatch.index);
-  let depth = 0;
-  let closeBraceIdx = -1;
-  for (let i = openBraceIdx; i < currentConf.length; i++) {
-    if (currentConf[i] === '{') depth++;
-    else if (currentConf[i] === '}') {
-      depth--;
-      if (depth === 0) {
-        closeBraceIdx = i;
-        break;
+  if (streamMatch && streamMatch.index !== undefined) {
+    const openBraceIdx = currentConf.indexOf('{', streamMatch.index);
+    let depth = 0;
+    let closeBraceIdx = -1;
+    for (let i = openBraceIdx; i < currentConf.length; i++) {
+      if (currentConf[i] === '{') depth++;
+      else if (currentConf[i] === '}') {
+        depth--;
+        if (depth === 0) {
+          closeBraceIdx = i;
+          break;
+        }
       }
     }
+    if (closeBraceIdx === -1) {
+      throw new Error('Malformed nginx.conf — unbalanced braces in the stream{} block');
+    }
+    const before = currentConf.slice(0, closeBraceIdx);
+    const after = currentConf.slice(closeBraceIdx);
+    return `${before}${managedBlock}\n${after}`;
   }
-  if (closeBraceIdx === -1) {
-    throw new Error('Malformed nginx.conf — unbalanced braces in the stream{} block');
+
+  // Case 3: no stream{} block at all (a plain http-only nginx.conf, e.g. a
+  // reverse-proxy config) → create one in the main context. stream{}
+  // (ngx_stream_core_module, a Layer-4 TCP/UDP proxy) is a SIBLING of
+  // http{}/events{}, never nested inside http{} and never in an include under
+  // conf.d (those are pulled in *inside* http{}). Insert it right before the
+  // http{} block if present, else append to the end of the main context.
+  const newStreamBlock = `stream {\n${managedBlock}\n}\n`;
+  const httpMatch = currentConf.match(/^http\s*\{/m);
+  if (httpMatch && httpMatch.index !== undefined) {
+    const before = currentConf.slice(0, httpMatch.index);
+    const after = currentConf.slice(httpMatch.index);
+    return `${before}${newStreamBlock}\n${after}`;
   }
-  const before = currentConf.slice(0, closeBraceIdx);
-  const after = currentConf.slice(closeBraceIdx);
-  return `${before}${managedBlock}\n${after}`;
+  return `${currentConf.replace(/\s*$/, '')}\n\n${newStreamBlock}`;
 }
 
 export interface DeployResult {
@@ -142,13 +164,39 @@ export async function deployPortForwardConfig(): Promise<DeployResult> {
   if (!containerName) {
     return { deployed: false, error: 'nginx container name not configured in Settings' };
   }
+  const configPath = settings.portForward?.nginxConfigPath || '/etc/nginx/nginx.conf';
+  const candidatePath = `${configPath}.candidate`;
 
   let currentConf: string;
   try {
-    const { stdout } = await execAsync(`docker exec ${containerName} cat /etc/nginx/nginx.conf`, { timeout: 10000 });
+    const { stdout } = await execAsync(`docker exec ${containerName} cat "${configPath}"`, { timeout: 10000 });
     currentConf = stdout;
   } catch (e) {
-    return { deployed: false, error: `could not read nginx.conf from container "${containerName}": ${errMessage(e)}` };
+    return { deployed: false, error: `could not read "${configPath}" from container "${containerName}": ${errMessage(e)}` };
+  }
+
+  // Preflight: creating a brand-new stream{} block needs nginx built with the
+  // stream module (ngx_stream_core_module). Many custom images — notably rtmp
+  // builds — omit it, and adding stream{} to those makes `nginx -t` fail with
+  // a cryptic "unknown directive stream". Only enforce this when we'd actually
+  // CREATE the block; an existing stream{} (or our own markers) already proves
+  // the module is present.
+  const needsNewStreamBlock =
+    currentConf.indexOf(BEGIN_MARKER) === -1 && !/^stream\s*\{/m.test(currentConf);
+  if (needsNewStreamBlock) {
+    try {
+      // nginx prints its configure args to stderr; capture both to be safe.
+      const { stdout, stderr } = await execAsync(`docker exec ${containerName} nginx -V`, { timeout: 10000 });
+      if (!`${stdout}${stderr}`.includes('--with-stream')) {
+        return {
+          deployed: false,
+          error: `nginx container "${containerName}" was not built with the stream module (--with-stream), so raw TCP port forwarding isn't supported by this nginx build. Point Settings at an nginx container that includes ngx_stream_core_module, or forward the port another way.`,
+        };
+      }
+    } catch {
+      // Couldn't run nginx -V — fall through; the nginx -t check on the
+      // candidate below still catches a missing module, just less clearly.
+    }
   }
 
   let newConf: string;
@@ -162,16 +210,16 @@ export async function deployPortForwardConfig(): Promise<DeployResult> {
   fs.writeFileSync(tmpFile, newConf, 'utf-8');
 
   try {
-    await execAsync(`docker cp "${tmpFile}" ${containerName}:/etc/nginx/nginx.conf.candidate`, { timeout: 10000 });
+    await execAsync(`docker cp "${tmpFile}" ${containerName}:"${candidatePath}"`, { timeout: 10000 });
 
     try {
-      await execAsync(`docker exec ${containerName} nginx -t -c /etc/nginx/nginx.conf.candidate`, { timeout: 10000 });
+      await execAsync(`docker exec ${containerName} nginx -t -c "${candidatePath}"`, { timeout: 10000 });
     } catch (e) {
-      await execAsync(`docker exec ${containerName} rm -f /etc/nginx/nginx.conf.candidate`, { timeout: 5000 }).catch(() => {});
+      await execAsync(`docker exec ${containerName} rm -f "${candidatePath}"`, { timeout: 5000 }).catch(() => {});
       return { deployed: false, error: `nginx -t validation failed, live config left untouched: ${errMessage(e)}` };
     }
 
-    // nginx.conf is commonly a bind-mounted file (confirmed live against
+    // configPath is commonly a bind-mounted file (confirmed live against
     // env_services_nginx — mounted from /opt/services/nginx.conf on the
     // host). `cp`/`docker cp` both try to unlink+recreate the destination
     // inode, which fails on a bind mount even with -f ("File exists" from
@@ -180,10 +228,10 @@ export async function deployPortForwardConfig(): Promise<DeployResult> {
     // redirect truncates-in-place instead, which works on a bind mount the
     // same way `> file` always has.
     await execAsync(
-      `docker exec -i ${containerName} sh -c 'cat > /etc/nginx/nginx.conf' < "${tmpFile}"`,
+      `docker exec -i ${containerName} sh -c 'cat > "${configPath}"' < "${tmpFile}"`,
       { timeout: 10000 }
     );
-    await execAsync(`docker exec ${containerName} rm -f /etc/nginx/nginx.conf.candidate`, { timeout: 5000 }).catch(() => {});
+    await execAsync(`docker exec ${containerName} rm -f "${candidatePath}"`, { timeout: 5000 }).catch(() => {});
     await execAsync(`docker exec ${containerName} nginx -s reload`, { timeout: 10000 });
     return { deployed: true };
   } catch (e) {

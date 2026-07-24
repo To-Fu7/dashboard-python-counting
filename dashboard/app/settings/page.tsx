@@ -166,19 +166,29 @@ export default function SettingsPage() {
       </Section>
 
       <Section title="Port Forward (nginx)">
-        <FormField label="nginx Container Name">
-          <Input
-            value={settings.portForward.nginxContainerName}
-            onChange={e => setPortForward('nginxContainerName', e.target.value)}
-            placeholder="env_services_nginx"
-          />
-          <p className="text-xs text-muted-foreground">
-            Name of the EXISTING nginx Docker container to manage port forwards in — this dashboard
-            never creates or replaces that container, only regenerates its stream{'{}'} block
-            (existing hand-written forwards in it are preserved). Leave empty to disable the
-            Port Forward feature on device pages.
-          </p>
-        </FormField>
+        <div className="grid grid-cols-2 gap-4">
+          <FormField label="nginx Container Name">
+            <Input
+              value={settings.portForward.nginxContainerName}
+              onChange={e => setPortForward('nginxContainerName', e.target.value)}
+              placeholder="env_services_nginx"
+            />
+          </FormField>
+          <FormField label="nginx.conf Path (inside container)">
+            <Input
+              value={settings.portForward.nginxConfigPath}
+              onChange={e => setPortForward('nginxConfigPath', e.target.value)}
+              placeholder="/etc/nginx/nginx.conf"
+            />
+          </FormField>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Name and internal config path of the EXISTING nginx Docker container to manage port
+          forwards in — this dashboard never creates or replaces that container, only regenerates
+          the stream{'{}'} block in that one file (existing hand-written forwards in it are
+          preserved). Leave the container name empty to disable the Port Forward feature on device
+          pages.
+        </p>
       </Section>
 
       <Section title="PostgreSQL Database">
